@@ -39,3 +39,11 @@ Thumbs.db
 
 # Scratch & temporary dev files
 scratch/
+
+# Local verification images and deployment backups
+*-preview.png
+*-preview.jpg
+login-verified.png
+backups/
+*.sql.gz
+keelek-backup-*.json

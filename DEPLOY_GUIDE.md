@@ -1,321 +1,144 @@
-# คู่มือการติดตั้งและ Deploy ระบบบน Cloud VPS (Ubuntu 22.04 LTS)
-### รองรับ Multi-Domain (`kuayrai.com`, `twiniiz.com`) & Multi-Subdomain ด้วย PM2 + Nginx + Docker
+# ขึ้นระบบคีย์เลขที่ keelek.kuayrai.com
 
----
+## รูปแบบ VPS ที่รองรับหลายระบบ
 
-## 🏗️ ภาพรวมโครงสร้างระบบ (Architecture Overview)
+ใช้ Nginx บน VPS เป็นจุดรับ HTTPS กลาง แล้ว proxy ไปยัง web container ของแต่ละระบบผ่าน localhost
 
-```
-                       [ ผู้ใช้งาน / Browser ]
-                                  │
-                                  ▼
-                 [ Cloudflare / Domain DNS ]
-                 (kuayrai.com, twiniiz.com)
-                                  │
-                                  ▼
-     ┌────────────────── เซิร์ฟเวอร์ VPS (Ubuntu 22.04) ──────────────────┐
-     │                                                                   │
-     │  🔒 UFW Firewall (เปิดเฉพาะ Port 22 SSH, 80 HTTP, 443 HTTPS)        │
-     │                                                                   │
-     │  🌐 Nginx Reverse Proxy (พอร์ต 80, 443 + SSL Certbot)              │
-     │     ├── keelek.kuayrai.com ──► Static: /var/www/keelek/frontend/dist │
-     │     │                      ──► API/Socket: 127.0.0.1:3000          │
-     │     ├── [อนาคต] app2.kuayrai.com ─► API: 127.0.0.1:3001            │
-     │     └── [อนาคต] app.twiniiz.com  ─► API: 127.0.0.1:3002            │
-     │                                                                   │
-     │  ⚡ PM2 Process Manager (ทำงานเบื้องหลัง + Auto-start เมื่อรีบูต)    │
-     │     ├── keelek-backend    (Port 3000)                             │
-     │     ├── [อนาคต] app2-backend (Port 3001)                          │
-     │     └── [อนาคต] twiniiz-app  (Port 3002)                          │
-     │                                                                   │
-     │  🐳 Docker Engine (MySQL & Database Services)                     │
-     │     └── mysql-kuayrai (Port 127.0.0.1:3306 - ปิดกั้นภายนอก)        │
-     │                                                                   │
-     │  💾 Swap Memory 4GB (ป้องกัน Out-Of-Memory ช่วยให้ RAM 4GB นิ่ง)  │
-     └───────────────────────────────────────────────────────────────────┘
+| ระบบ | ชื่อเว็บไซต์ | พอร์ต localhost | Compose project |
+| --- | --- | --- | --- |
+| คีย์เลข | keelek.kuayrai.com | 8081 | keelek |
+| ระบบถัดไป | ชื่อระบบ.twiniiz.com | 8082 (ตัวอย่าง) | ชื่อระบบแยกกัน |
+| ระบบเพิ่มเติม | ชื่อระบบ.kuayrai.com หรือโดเมนใหม่ | 8083 เป็นต้นไป | ชื่อระบบแยกกัน |
+
+แต่ละระบบมี repo, Compose project, network, database volume และ secrets ของตัวเอง ไม่ใช้ container_name ร่วมกัน Nginx มี server block และใบรับรองแยกตาม subdomain จึงไม่ต้องย้ายระบบเดิมเมื่อเพิ่มโดเมน ไม่มีการตั้งค่า twiniiz.com จริงใน repo นี้ เพราะยังไม่มีระบบหรือชื่อ subdomain ของโดเมนนั้น
+
+เฉพาะ Nginx กลางเปิด 80/443 ส่วน API และ MySQL ของคีย์เลขไม่มีพอร์ตสาธารณะ Web ของคีย์เลขรับที่ 127.0.0.1:8081 เท่านั้น
+
+## 1. เตรียม VPS และ DNS
+
+คู่มือนี้ใช้ Ubuntu 24.04 LTS ต้องทราบ OS จริงก่อนติดตั้ง หากเป็น OS อื่นให้ปรับขั้นตอนติดตั้งแพ็กเกจ
+
+- สร้าง DNS A record: `keelek` ของ `kuayrai.com` ชี้ IPv4 ของ VPS
+- สร้าง AAAA เฉพาะเมื่อ VPS มี IPv6 ที่เข้าถึงได้จริง
+- เริ่มด้วย DNS only หากใช้ Cloudflare แล้วค่อยเปิด proxy หลัง HTTPS ใช้งานได้ ตั้ง SSL เป็น Full (strict)
+- เปิด inbound SSH ตามพอร์ตที่ใช้จริง, TCP 80 และ 443 เท่านั้น อย่าเปิด MySQL 3306 หรือพอร์ต API
+- ตรวจไฟร์วอลล์ผู้ให้บริการด้วย ก่อนเปิด UFW ต้องอนุญาต SSH พอร์ตจริง เพื่อไม่ให้หลุดจากเครื่อง
+
+ติดตั้ง Docker Engine และ Compose plugin ตาม [คู่มือ Docker สำหรับ Ubuntu](https://docs.docker.com/engine/install/ubuntu/) ไม่ใช้ Docker Compose รุ่นเก่า `docker-compose`
+
+```sh
+sudo apt update
+sudo apt install -y git nginx certbot python3-certbot-nginx openssl
+sudo systemctl enable --now nginx docker
 ```
 
----
+ตรวจ `docker version`, `docker compose version`, `nginx -v` และบริการที่ใช้พอร์ต 80/443/8081 ก่อนติดตั้ง หากมี Nginx หรือระบบอื่นอยู่แล้ว ให้ตรวจ config เดิมก่อน ไม่เขียนทับ nginx.conf กลาง
 
-## 📋 ข้อมูลสเปกเครื่องเซิร์ฟเวอร์
-- **CPU**: 2 vCores
-- **RAM**: 4 GB (+ Swap 4 GB)
-- **SSD**: 60 GB
-- **OS**: Ubuntu 22.04 LTS (x86_64)
-- **IP VPS**: *(ตรวจสอบจากอีเมลหรือ Dashboard ผู้ให้บริการ VPS)*
-- **Domains**: `kuayrai.com`, `twiniiz.com`
+## 2. Clone และสร้าง secrets ใหม่บน VPS
 
----
-
-## ขั้นตอนที่ 1: ตั้งค่า DNS ชี้โดเมน (Domain DNS Setup)
-
-ล็อกอินเข้าไปที่เว็บที่คุณซื้อหรือจัดการ DNS (เช่น Cloudflare, GoDaddy, Namecheap, หรือเว็บ Hosting เดิม):
-เพิ่ม **DNS Record** ดังนี้:
-
-### โดเมน: `kuayrai.com`
-| Type | Name / Host | Value / Target | Proxy status (ถ้าใช้ Cloudflare) |
-| :--- | :--- | :--- | :--- |
-| **A** | `keelek` | `<IP_VPS_ของคุณ>` | DNS Only (สีเทา) ในช่วงแรกเพื่อขอ SSL |
-| **A** | `@` (หรือ kuayrai.com) | `<IP_VPS_ของคุณ>` | DNS Only (สีเทา) |
-| **A** | `www` | `<IP_VPS_ของคุณ>` | DNS Only (สีเทา) |
-| **A** | `*` (Wildcard สำหรับ subdomain ในอนาคต) | `<IP_VPS_ของคุณ>` | DNS Only (สีเทา) |
-
-### โดเมน: `twiniiz.com` (ตั้งรอไว้ได้เลย หรือตั้งเมื่อพร้อมทำระบบใหม่)
-| Type | Name / Host | Value / Target |
-| :--- | :--- | :--- |
-| **A** | `@` | `<IP_VPS_ของคุณ>` |
-| **A** | `*` | `<IP_VPS_ของคุณ>` |
-
----
-
-## ขั้นตอนที่ 2: เชื่อมต่อ SSH เข้า VPS จาก Mac
-
-เปิดแอป **Terminal** บน Mac (กด `Cmd + Space` พิมพ์ `Terminal` แล้วกด `Enter`):
-
-```bash
-ssh root@<IP_VPS_ของคุณ>
-```
-- ระบบจะถามยืนยันการเชื่อมต่อครั้งแรก ให้พิมพ์ `yes` แล้วกด `Enter`
-- ใส่รหัสผ่าน `root` ที่ได้รับจากผู้ให้บริการ VPS (ขณะพิมพ์รหัสผ่านเคอร์เซอร์จะไม่ขยับ เป็นเรื่องปกติของ Linux พิมพ์เสร็จแล้วกด `Enter`)
-
----
-
-## ขั้นตอนที่ 3: ติดตั้งและตั้งค่าพื้นฐานเครื่องเซิร์ฟเวอร์
-
-เมื่อล็อกอินเข้าไปในเครื่อง VPS เรียบร้อยแล้ว ให้รันคำสั่งตามลำดับนี้:
-
-### 3.1 อัปเดตแพ็กเกจระบบ
-```bash
-apt update && apt upgrade -y
+```sh
+sudo install -d -m 0750 -o "$USER" -g "$USER" /srv/apps/keelek
+git clone https://github.com/athanhomemail/kee-lek.git /srv/apps/keelek
+cd /srv/apps/keelek
+sh deploy/scripts/init-env.sh
 ```
 
-### 3.2 ตั้งค่า Swap Memory 4GB (สำคัญมากสำหรับ VPS 4GB ช่วยให้เครื่องไม่แฮงก์)
-```bash
-fallocate -l 4G /swapfile
-chmod 600 /swapfile
-mkswap /swapfile
-swapon /swapfile
-echo '/swapfile none swap sw 0 0' >> /etc/fstab
+ถ้า repo เป็น private ใช้ SSH deploy key ที่อ่าน repo นี้ได้เท่านั้น หรือ Git credential helper ห้ามฝัง token ใน URL ของ remote
+
+`deploy/.env` ถูกสร้างด้วย secrets สุ่มและ permission 600 ไม่เข้า Git ห้ามคัดลอก .env จากเครื่องพัฒนา หรือใช้ password/test1234 บน production ห้ามรัน seed:test บน VPS
+
+ตรวจ `WEB_PORT=8081` ว่าไม่ชนระบบอื่น หากเปลี่ยน ต้องแก้ proxy_pass ของ Nginx ด้วย
+
+## 3. เปิดระบบ
+
+```sh
+cd /srv/apps/keelek
+docker compose --env-file deploy/.env -f deploy/compose.yml config --quiet
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d --build --wait
+docker compose --env-file deploy/.env -f deploy/compose.yml exec -T api npm run seed
+docker compose --env-file deploy/.env -f deploy/compose.yml ps
+curl --fail http://127.0.0.1:8081/api/health
 ```
 
-### 3.3 ติดตั้งโปรแกรมเครื่องมือจำเป็น
-```bash
-apt install -y git curl wget ufw nginx certbot python3-certbot-nginx htop
+คำสั่ง Docker อาจต้อง sudo หากผู้ใช้ยังไม่มีสิทธิ์ Docker อย่าเพิ่มผู้ใช้เข้ากลุ่ม docker โดยไม่เข้าใจว่ากลุ่มนี้มีสิทธิ์เทียบเท่า root
+
+ฐานข้อมูลใหม่เริ่มเฉพาะประเภทหวย ไม่มีโพย งวด Leader/Member หรือบัญชีทดสอบ จึงไม่ต้องล้างข้อมูลเครื่องพัฒนาเพื่อ deploy วิธีนี้
+
+Admin เริ่มต้น `admintor`, `adminmike` ใช้รหัสสุ่มจาก `ADMIN_INITIAL_PASSWORD` ใน deploy/.env ดูรหัสเฉพาะบน VPS และเปลี่ยนรหัสผ่านครั้งแรกของแต่ละบัญชี ก่อนเปิดให้ผู้อื่นใช้ ระบบบังคับเปลี่ยนก่อนเข้าข้อมูล
+
+## 4. Nginx กลางและ HTTPS
+
+หลัง DNS ชี้ VPS และพอร์ต 80 เข้าถึงได้:
+
+```sh
+cd /srv/apps/keelek
+sudo install -d /etc/nginx/snippets
+sudo install -m 0644 deploy/nginx/websocket-map.conf /etc/nginx/conf.d/platform-websocket-map.conf
+sudo install -m 0644 deploy/nginx/platform-proxy.conf /etc/nginx/snippets/platform-proxy.conf
+sudo install -m 0644 deploy/nginx/keelek.kuayrai.com.conf /etc/nginx/sites-available/keelek.kuayrai.com.conf
+sudo ln -s /etc/nginx/sites-available/keelek.kuayrai.com.conf /etc/nginx/sites-enabled/keelek.kuayrai.com.conf
+sudo nginx -t
+sudo systemctl reload nginx
+sudo certbot --nginx -d keelek.kuayrai.com --redirect
+sudo certbot renew --dry-run
 ```
 
-### 3.4 ติดตั้ง Node.js 20 LTS และ PM2
-```bash
-curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
-apt install -y nodejs
-npm install -g pm2
-```
-*ตรวจเช็คเวอร์ชัน:* `node -v` และ `pm2 -v`
+ไฟล์ platform-* เป็นไฟล์ส่วนกลาง ติดตั้งครั้งแรกเท่านั้น ถ้ามีอยู่แล้วให้เทียบเนื้อหาก่อน ไม่เขียนทับระบบอื่น การรันซ้ำไม่ต้องสร้าง symlink เดิมอีก
 
-### 3.5 ติดตั้ง Docker และ Docker Compose
-```bash
-curl -fsSL https://get.docker.com | sh
-apt install -y docker-compose-plugin
-systemctl enable --now docker
-```
-*ตรวจเช็คเวอร์ชัน:* `docker --version` และ `docker compose version`
+Certbot จะเพิ่ม HTTPS และ redirect ใน config บน VPS ให้ตรวจ nginx -t ก่อน reload ทุกครั้ง อย่านำ HTTP bootstrap ใน Git ไปทับ config ที่ Certbot แก้แล้ว
 
-### 3.6 ตั้งค่า Firewall (UFW) เพื่อความปลอดภัยสูงสุด
-```bash
-ufw default deny incoming
-ufw default allow outgoing
-ufw allow 22/tcp    # SSH
-ufw allow 80/tcp    # HTTP
-ufw allow 443/tcp   # HTTPS
-ufw --force enable
-ufw status
-```
-*(หมายเหตุ: Port 3306 ของ MySQL จะปิดกั้นจากโลกภายนอก ให้เข้าได้เฉพาะ localhost ภายในเครื่องเท่านั้น)*
+ทดสอบ https://keelek.kuayrai.com, `/api/health`, Login, Socket.IO และ Copy รูป ระบบคัดลอกรูปต้อง HTTPS
 
----
+## 5. เพิ่มระบบหรือโดเมนภายหลัง
 
-## ขั้นตอนที่ 4: นำโค้ดโปรเจกต์ขึ้นเซิร์ฟเวอร์
+1. ระบบใหม่ใช้โฟลเดอร์ `/srv/apps/<ระบบ>` และ Compose project ชื่อใหม่
+2. เลือกพอร์ต localhost ใหม่ เช่น 8082 พร้อมฐานข้อมูลและ volume แยก
+3. ใช้ deploy/nginx/subdomain.conf.example เปลี่ยน SUBDOMAIN.DOMAIN และ LOCAL_PORT เป็นค่าจริง แล้วติดตั้งเป็นไฟล์ใหม่
+4. สร้าง DNS ของ subdomain และออกใบรับรอง `certbot --nginx -d <subdomain>` แยกต่อระบบ
+5. ใช้ snippets ส่วนกลางชุดเดิม ไม่แก้ server block ของคีย์เลข
 
-สร้างโฟลเดอร์สำหรับเก็บโปรเจกต์:
-```bash
-mkdir -p /var/www/keelek
-cd /var/www/keelek
+## สำรอง อัปเดต และกู้คืน
+
+สำรอง MySQL:
+
+```sh
+cd /srv/apps/keelek
+sh deploy/scripts/backup.sh
 ```
 
-### เลือกวิธีนำโค้ดขึ้น (วิธีใดวิธีหนึ่ง):
+เก็บสำรองอีกชุดนอก VPS ด้วย การมีไฟล์อยู่ในเครื่องเดียวไม่ช่วยหาก VPS เสียทั้งหมด ตั้งงานสำรองรายวันเมื่อทราบวิธีเก็บสำรองจริง
 
-#### วิธีที่ 4.1: ผ่าน GitHub (แนะนำ)
-รันบน VPS:
-```bash
-git clone https://github.com/athanhomemail/keelek.git /var/www/keelek
-```
-*(หากเป็น Private Repo ให้ใช้ GitHub Personal Access Token หรือเพิ่ม SSH Deploy Key)*
+อัปเดต:
 
-#### วิธีที่ 4.2: คัดลอกจากเครื่อง Mac โดยตรง (rsync)
-เปิดหน้าต่าง Terminal **แท็บใหม่บนเครื่อง Mac** แล้วรัน:
-```bash
-rsync -avz --exclude 'node_modules' --exclude 'dist' /Users/torz.athan/@Projects/Kuayrai/keelek/ root@<IP_VPS_ของคุณ>:/var/www/keelek/
+```sh
+cd /srv/apps/keelek
+sh deploy/scripts/update.sh
 ```
 
----
+สคริปต์ตรวจ working tree, สำรองก่อน, pull main แบบ ff-only และ build/up ใหม่ ข้อมูลอยู่ใน named volume Schema init จะทำงานเฉพาะ volume ใหม่ ถ้าอนาคตเปลี่ยน schema ต้องมี migration ตาม release ก่อนอัปเดต ห้าม down -v บน production
 
-## ขั้นตอนที่ 5: รัน Database MySQL ด้วย Docker
+กู้คืนเป็นขั้นตอนที่ทับข้อมูล ต้องเลือกไฟล์และยืนยันกับผู้ดูแลก่อน ตัวอย่างคำสั่งหลังหยุดผู้ใช้งาน:
 
-บน VPS เข้าไปที่โฟลเดอร์ Docker:
-```bash
-cd /var/www/keelek/Docker
-docker compose up -d
-```
-*ตรวจเช็คสถานะฐานข้อมูล:*
-```bash
-docker ps
-```
-จะเห็น container ชื่อ `mysql-kuayrai` สถานะ `Up` (และระบบจะรัน SQLSchema สร้างตารางและข้อมูลเริ่มต้นให้อัตโนมัติ)
-
----
-
-## ขั้นตอนที่ 6: รัน Backend ด้วย PM2
-
-```bash
-cd /var/www/keelek/backend
-
-# สร้างไฟล์ .env
-cp .env.example .env
-
-# ติดตั้งแพ็กเกจ Backend
-npm install --production=false
-
-# ถอยมาที่ root เพื่อสั่งเริ่มการทำงานผ่าน PM2 Ecosystem
-cd /var/www/keelek
-pm2 start ecosystem.config.cjs
-
-# บันทึกสถานะ PM2 และตั้งให้เริ่มทำงานอัตโนมัติเมื่อเซิร์ฟเวอร์เปิดใหม่
-pm2 save
-pm2 startup
-# (คัดลอกคำสั่งที่ระบบแสดงขึ้นมาวางแล้วรันอีกครั้ง เพื่อผูก systemd service)
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.yml stop web api
+gunzip -c backups/FILE.sql.gz > /tmp/keelek-restore.sql
+docker compose --env-file deploy/.env -f deploy/compose.yml exec -T db sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" exec mysql -uroot keeled' < /tmp/keelek-restore.sql
+rm /tmp/keelek-restore.sql
+docker compose --env-file deploy/.env -f deploy/compose.yml up -d --wait
 ```
 
-*คำสั่งตรวจสอบ Backend:*
-```bash
-pm2 status
-pm2 logs keelek-backend --lines 30
+ไฟล์ restore ชั่วคราวมีข้อมูลสำคัญ ควรใช้ umask 077 ก่อนสร้างไฟล์ และเก็บ secrets/backup นอก Git เสมอ
+
+อ่านการล้างข้อมูลใน [ADMIN-MAINTENANCE.md](ADMIN-MAINTENANCE.md) การล้างจาก UI เป็นการลบข้อมูลจริง ไม่ใช่ขั้นตอนที่ต้องทำเพื่อ clone ระบบใหม่
+
+## ตรวจปัญหา
+
+```sh
+docker compose --env-file deploy/.env -f deploy/compose.yml logs --tail=100 api web db
+sudo nginx -t
+sudo tail -n 100 /var/log/nginx/keelek.error.log
 ```
 
----
+หากเปลี่ยน MYSQL_PASSWORD ใน .env หลัง volume มีข้อมูลแล้ว ต้องเปลี่ยน password ใน MySQL ให้ตรงด้วย การแก้ env อย่างเดียวไม่หมุนรหัสฐานข้อมูล
 
-## ขั้นตอนที่ 7: Build Frontend (Vite)
-
-```bash
-cd /var/www/keelek/frontend
-npm install
-npm run build
-```
-*(ระบบจะ compile และสร้างไฟล์เว็บสำเร็จรูปไว้ที่ `/var/www/keelek/frontend/dist`)*
-
----
-
-## ขั้นตอนที่ 8: ตั้งค่า Nginx Reverse Proxy
-
-นำไฟล์คอนฟิก Nginx ของโปรเจกต์ไปเปิดใช้งาน:
-```bash
-cp /var/www/keelek/nginx-keelek.conf /etc/nginx/sites-available/keelek.kuayrai.com
-
-# สร้าง Symbolic Link ไปยัง sites-enabled
-ln -s /etc/nginx/sites-available/keelek.kuayrai.com /etc/nginx/sites-enabled/
-
-# ลบ default site ของ Nginx ออก
-rm -f /etc/nginx/sites-enabled/default
-
-# ทดสอบว่าไฟล์คอนฟิกถูกต้องหรือไม่
-nginx -t
-
-# รีโหลด Nginx เพื่อใช้งาน
-systemctl reload nginx
-```
-
----
-
-## ขั้นตอนที่ 9: ขอ SSL Certificate ฟรี (HTTPS) ด้วย Certbot
-
-เมื่อชี้ DNS มาที่ IP เซิร์ฟเวอร์เรียบร้อยแล้ว ให้รันคำสั่ง:
-```bash
-certbot --nginx -d keelek.kuayrai.com -d kuayrai.com -d www.kuayrai.com
-```
-- กรอก Email เพื่อรับแจ้งเตือนเมื่อใกล้หมดอายุ
-- กด `Y` ยอมรับ Terms of Service
-- Certbot จะตรวจสอบโดเมน ติดตั้ง SSL Certificate ให้ และปรับแต่ง Nginx ให้ Redirect จาก HTTP เป็น HTTPS ให้อัตโนมัติทันที
-- SSL จะมีอายุ 90 วันและระบบมี Auto-renewal ทำงานอยู่เบื้องหลังตลอดเวลา
-
----
-
-## 🚀 พิมพ์เขียว: การเพิ่มระบบใหม่ในอนาคต (Multi-Project Blueprint)
-
-เมื่อคุณต้องการนำระบบใหม่มาลงในเครื่องนี้ เช่น:
-- ระบบที่ 2: `lottery.kuayrai.com`
-- ระบบที่ 3: `twiniiz.com` หรือ `shop.twiniiz.com`
-
-ทำตาม 4 ขั้นตอนนี้ได้ทันที:
-
-### 1. วางโค้ดในโฟลเดอร์ใหม่
-```bash
-mkdir -p /var/www/ระบบใหม่
-# เอาโค้ดลงที่นี่
-```
-
-### 2. รัน Backend ใน PM2 ด้วย Port ใหม่ (เช่น 3001, 3002)
-เพิ่มลงใน PM2 ด้วยคำสั่ง:
-```bash
-cd /var/www/ระบบใหม่/backend
-pm2 start src/server.js --name "system2-backend" --env PORT=3001
-pm2 save
-```
-
-### 3. สร้าง Nginx Config ใหม่ใน `/etc/nginx/sites-available/`
-ตัวอย่างไฟล์ `/etc/nginx/sites-available/shop.twiniiz.com`:
-```nginx
-server {
-    listen 80;
-    server_name shop.twiniiz.com twiniiz.com;
-
-    root /var/www/ระบบใหม่/frontend/dist;
-    index index.html;
-    client_max_body_size 25M;
-
-    location / {
-        try_files $uri $uri/ /index.html;
-    }
-
-    location /api/ {
-        proxy_pass http://127.0.0.1:3001; # ชี้ไปพอร์ตของระบบนี้
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection 'upgrade';
-        proxy_set_header Host $host;
-    }
-}
-```
-เปิดใช้งาน:
-```bash
-ln -s /etc/nginx/sites-available/shop.twiniiz.com /etc/nginx/sites-enabled/
-nginx -t && systemctl reload nginx
-```
-
-### 4. ขอ SSL HTTPS ให้ระบบใหม่
-```bash
-certbot --nginx -d shop.twiniiz.com -d twiniiz.com
-```
-
----
-
-## 🛠️ คำสั่งมีประโยชน์สำหรับตรวจสอบและดูแลระบบ (Cheat Sheet)
-
-| คำสั่ง | ประโยชน์ |
-| :--- | :--- |
-| `pm2 status` | ดูรายการโปรเซสและสถานะของทุกระบบ |
-| `pm2 logs keelek-backend` | ดู log การทำงานของ backend แบบ realtime |
-| `pm2 restart keelek-backend` | สั่ง restart backend หลังแก้โค้ด |
-| `docker ps` | ดูสถานะตู้คอนเทนเนอร์ฐานข้อมูล MySQL |
-| `nginx -t` | ทดสอบความถูกต้องของไฟล์คอนฟิก Nginx |
-| `systemctl reload nginx` | รีโหลด Nginx โดยไม่ต้องดับเซิร์ฟเวอร์ |
-| `htop` | ตรวจสอบการใช้งาน CPU และ RAM ของเซิร์ฟเวอร์ |
-| `df -h` | ตรวจสอบพื้นที่ฮาร์ดดิสก์ SSD ที่เหลือ |
-
+อ้างอิง: [Nginx WebSocket](https://nginx.org/en/docs/http/websocket.html), [Docker Compose services](https://docs.docker.com/reference/compose-file/services/), [Certbot](https://certbot.eff.org/)

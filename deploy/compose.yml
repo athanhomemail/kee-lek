@@ -1,0 +1,70 @@
+name: keelek
+services:
+  db:
+    image: mysql:8.4
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: keeled
+      MYSQL_USER: keelek
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?Generate deployment secrets first}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?Generate deployment secrets first}
+      TZ: Asia/Bangkok
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ../schemas:/docker-entrypoint-initdb.d:ro
+    networks: [database]
+    healthcheck:
+      test: [CMD, mysqladmin, ping, -h, localhost]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    logging: &logging
+      driver: json-file
+      options: {max-size: 10m, max-file: '3'}
+  api:
+    build: {context: .., dockerfile: backend/Dockerfile}
+    restart: unless-stopped
+    init: true
+    environment:
+      NODE_ENV: production
+      API_HOST: 0.0.0.0
+      PORT: 4000
+      TRUST_PROXY_HOPS: 2
+      FRONTEND_URL: https://keelek.kuayrai.com
+      JWT_SECRET: ${JWT_SECRET:?Generate deployment secrets first}
+      DB_HOST: db
+      DB_PORT: 3306
+      DB_USER: keelek
+      DB_PASSWORD: ${MYSQL_PASSWORD:?Generate deployment secrets first}
+      DB_NAME: keeled
+      ADMIN_INITIAL_PASSWORD: ${ADMIN_INITIAL_PASSWORD:?Generate deployment secrets first}
+      TZ: Asia/Bangkok
+    networks: [application, database]
+    depends_on:
+      db: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, node, -e, "fetch('http://127.0.0.1:4000/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+  web:
+    build: {context: .., dockerfile: frontend/Dockerfile}
+    restart: unless-stopped
+    ports: ['127.0.0.1:${WEB_PORT:-8081}:80']
+    networks: [application]
+    depends_on:
+      api: {condition: service_healthy}
+    healthcheck:
+      test: [CMD, wget, -q, --spider, http://127.0.0.1/]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+    logging: *logging
+networks:
+  application:
+  database:
+    internal: true
+volumes:
+  mysql-data:

@@ -1,0 +1,13 @@
+SET NAMES utf8mb4;
+CREATE DATABASE IF NOT EXISTS keeled CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE keeled;
+CREATE TABLE users (id BIGINT PRIMARY KEY AUTO_INCREMENT, username VARCHAR(60) UNIQUE NOT NULL, password VARCHAR(255) NOT NULL, name VARCHAR(150) NOT NULL, phone VARCHAR(30), role ENUM('Admin','Leader','Member') NOT NULL, leader_id BIGINT NULL, expires_at DATETIME NULL, active BOOLEAN DEFAULT TRUE, credit DECIMAL(14,2) DEFAULT 0, must_change BOOLEAN DEFAULT TRUE, FOREIGN KEY (leader_id) REFERENCES users(id));
+CREATE TABLE lotteries (id BIGINT PRIMARY KEY AUTO_INCREMENT, name VARCHAR(80) NOT NULL, kind VARCHAR(30) NOT NULL, flag VARCHAR(10), enabled BOOLEAN DEFAULT TRUE);
+CREATE TABLE draws (id BIGINT PRIMARY KEY AUTO_INCREMENT, lottery_id BIGINT NOT NULL, draw_date DATE NOT NULL, result_at DATETIME NOT NULL, top3 CHAR(3), top2 CHAR(2), bottom2 CHAR(2), FOREIGN KEY(lottery_id) REFERENCES lotteries(id), UNIQUE(lottery_id,draw_date));
+CREATE TABLE settings (leader_id BIGINT NOT NULL, lottery_id BIGINT NOT NULL, config JSON NOT NULL, PRIMARY KEY(leader_id,lottery_id));
+CREATE TABLE bills (id BIGINT PRIMARY KEY AUTO_INCREMENT, member_id BIGINT NOT NULL, leader_id BIGINT NOT NULL, draw_id BIGINT NOT NULL, items JSON NOT NULL, gross DECIMAL(14,2) NOT NULL, net DECIMAL(14,2) NOT NULL, note VARCHAR(500), status ENUM('active','cancelled') DEFAULT 'active', created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY(member_id) REFERENCES users(id), FOREIGN KEY(draw_id) REFERENCES draws(id));
+CREATE TABLE credit_requests (id BIGINT PRIMARY KEY AUTO_INCREMENT, member_id BIGINT NOT NULL, leader_id BIGINT NOT NULL, amount DECIMAL(14,2) NOT NULL, status ENUM('pending','approved','rejected') DEFAULT 'pending', note VARCHAR(500), created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE notifications (id BIGINT PRIMARY KEY AUTO_INCREMENT, user_id BIGINT NOT NULL, message VARCHAR(500) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE credit_ledger (id BIGINT PRIMARY KEY AUTO_INCREMENT, member_id BIGINT NOT NULL, actor_id BIGINT NOT NULL, amount DECIMAL(14,2) NOT NULL, reason VARCHAR(150) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
+INSERT INTO lotteries(name,kind,flag,enabled) VALUES ('หวยรัฐบาล','หวยไทย','🇹🇭',1),('หวยออมสิน','หวยไทย','🇹🇭',0),('หวยลาว','หวยนอก','🇱🇦',1),('หวยฮานอย','หวยนอก','🇻🇳',0);
+CREATE TABLE draw_settings (leader_id BIGINT NOT NULL, draw_id BIGINT NOT NULL, config JSON NOT NULL, PRIMARY KEY(leader_id,draw_id), FOREIGN KEY(draw_id) REFERENCES draws(id));
