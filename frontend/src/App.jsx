@@ -3,6 +3,7 @@ import axios from "axios";
 import { io } from "socket.io-client";
 import html2canvas from "html2canvas";
 import MaintenancePanel from "./MaintenancePanel.jsx";
+import LotteryFlag from "./LotteryFlag.jsx";
 import {
   Sparkles,
   LayoutDashboard,
@@ -703,7 +704,7 @@ export default function App() {
                         <section className="panel result" key={d.id}>
                           <span className="badge">{d.kind}</span>
                           <h2>
-                            {d.flag} {d.name}
+                            <LotteryFlag flag={d.flag} /> {d.name}
                           </h2>
                           <p className="muted">งวด {date(d.draw_date)}</p>
                           <div className="winning">
@@ -782,7 +783,9 @@ export default function App() {
                                   }}
                                 >
                                   <div className="lottery-top">
-                                    <span className="flag">{l.flag}</span>
+                                    <span className="flag">
+                                      <LotteryFlag flag={l.flag} />
+                                    </span>
                                     <span className="badge">
                                       {!l.enabled
                                         ? "เร็ว ๆ นี้"
@@ -815,7 +818,7 @@ export default function App() {
                   <>
                     <div className="key-heading">
                       <h2>
-                        {draw.flag} {draw.name}{" "}
+                        <LotteryFlag flag={draw.flag} /> {draw.name}{" "}
                         <small>{date(draw.draw_date)}</small>
                       </h2>
                       <div className="key-countdown">
@@ -2071,7 +2074,7 @@ function SettingsPage({ state, act, modal }) {
           {state.lotteries.filter(matchesSearch).map((l) => (
             <div className="item" key={l.id}>
               <strong>
-                {l.flag} {l.name}
+                <LotteryFlag flag={l.flag} /> {l.name}
               </strong>
               <span>{l.kind}</span>
               <button
@@ -2300,7 +2303,7 @@ function SettingsPage({ state, act, modal }) {
           return (
             <section className="panel" key={l.id}>
               <h2>
-                {l.flag} {l.name}
+                <LotteryFlag flag={l.flag} /> {l.name}
               </h2>
               <Form
                 className="rates-form"
@@ -2402,7 +2405,7 @@ function DrawRulesCard({ lottery, state, act, modal }) {
     <section className="panel draw-rules">
       <div className="section-head">
         <h2>
-          กฎงวด · {lottery.flag} {lottery.name}
+          กฎงวด · <LotteryFlag flag={lottery.flag} /> {lottery.name}
         </h2>
         <span className="badge">{upcoming.length} งวดที่ยังไม่ออกผล</span>
       </div>
