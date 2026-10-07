@@ -30,6 +30,7 @@ import {
   updateDraftAmount,
   formatNumberInput,
   blockedNumbers,
+  appendReversedNumbers,
 } from "./keying";
 import { accessTime } from "./access.js";
 import { nextDraws, resultDraws, homePage } from "./draws";
@@ -104,6 +105,8 @@ export default function App() {
   const [receiptTime, setReceiptTime] = useState(new Date());
   const [copying, setCopying] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [billStatus, setBillStatus] = useState("");
+  const submittingBill = useRef(false);
   useEffect(() => {
     if (!copied) return;
     const timer = setTimeout(() => setCopied(false), 3000);
@@ -114,6 +117,13 @@ export default function App() {
     setExcludedNumbers([]);
   }, [text, mode, digits, reverse, doubles, drawId]);
   const numberInput = useRef();
+  const reverseBatch = useRef(null);
+  useEffect(() => {
+    reverseBatch.current = null;
+  }, [mode, digits, drawId]);
+  useEffect(() => {
+    if (reverseBatch.current?.expanded !== text) reverseBatch.current = null;
+  }, [text]);
   useEffect(() => {
     let tabFocus = false;
     const keydown = (event) => {
@@ -408,10 +418,15 @@ export default function App() {
       message(e.message);
     }
   };
+  const addOnEnter = (event) => {
+    if (event.key !== "Enter" || event.nativeEvent.isComposing) return;
+    event.preventDefault();
+    if (!event.repeat) add();
+  };
   const editBill = (b) => {
     setDrawId(String(b.draw_id));
     setItems(
-      b.items.map(({ number, type, amount }) => ({ number, type, amount })),
+      b.items.map(({ entryId, number, type, amount }) => ({ entryId, number, type, amount })),
     );
     setNote(b.note || "");
     setEditId(b.id);
@@ -946,18 +961,7 @@ export default function App() {
                               >
                                 0
                               </button>
-                              <button
-                                className={
-                                  "win-option " + (reverse ? "selected" : "")
-                                }
-                                aria-pressed={reverse}
-                                onClick={() => {
-                                  setReverse((current) => !current);
-                                  setText("");
-                                }}
-                              >
-                                กลับเลข
-                              </button>
+                              <span className="muted small">กลับเลขด้วย Spacebar ในช่องเลข</span>
                             </div>
                             <button
                               className="primary full"
@@ -985,19 +989,8 @@ export default function App() {
                         )}
                         <div className="keying-tools">
                           {" "}
-                          {["2 ตัว", "3 ตัว"].includes(mode) && (
-                            <label className="check">
-                              <input
-                                type="checkbox"
-                                checked={reverse}
-                                disabled={
-                                  pasted ||
-                                  (text.match(/\d+/g) || []).length > 1
-                                }
-                                onChange={(e) => setReverse(e.target.checked)}
-                              />
-                              กลับเลข (กรอกทีละเลข)
-                            </label>
+                          {inputSize > 1 && (
+                            <span className="muted small">Spacebar: เพิ่ม / เอาเลขกลับออก</span>
                           )}
                           {["2 ตัว", "3 ตัว"].includes(mode) && (
                             <button
@@ -1026,6 +1019,23 @@ export default function App() {
                           <textarea
                             ref={numberInput}
                             value={text}
+                            onKeyDown={(e) => {
+                              if (e.key !== " " || e.nativeEvent.isComposing || inputSize === 1) return;
+                              e.preventDefault();
+                              if (e.repeat) return;
+                              const batch = reverseBatch.current;
+                              if (batch && text === batch.expanded) {
+                                setText(batch.original);
+                                reverseBatch.current = null;
+                              } else {
+                                const expanded = appendReversedNumbers(text, inputSize);
+                                if (expanded === text) return;
+                                reverseBatch.current = { original: text, expanded };
+                                setText(expanded);
+                              }
+                              const field = e.target;
+                              requestAnimationFrame(() => field.setSelectionRange(field.value.length, field.value.length));
+                            }}
                             onChange={(e) => {
                               const field = e.target;
                               const raw = field.value;
@@ -1083,6 +1093,7 @@ export default function App() {
                               step="0.01"
                               value={top}
                               onChange={(e) => setTop(e.target.value)}
+                              onKeyDown={addOnEnter}
                             />
                           </label>
                           {mode !== "6 กลับ" && (
@@ -1099,6 +1110,7 @@ export default function App() {
                                 step="0.01"
                                 value={bottom}
                                 onChange={(e) => setBottom(e.target.value)}
+                                onKeyDown={addOnEnter}
                               />
                             </label>
                           )}
@@ -1322,7 +1334,7 @@ export default function App() {
                                             setItems((current) =>
                                               updateDraftAmount(
                                                 current,
-                                                row.number,
+                                                row.key,
                                                 type,
                                                 e.target.value,
                                               ),
@@ -1351,11 +1363,7 @@ export default function App() {
                                 onClick={() =>
                                   setItems((current) =>
                                     current.filter(
-                                      (i) =>
-                                        !(
-                                          i.number === row.number &&
-                                          row.types.includes(i.type)
-                                        ),
+                                      (_, index) => !row.indices.includes(index),
                                     ),
                                   )
                                 }
@@ -1405,33 +1413,41 @@ export default function App() {
                         <button
                           className="primary full"
                           disabled={busy || !items.length || !config}
-                          onClick={() =>
-                            setModal({
-                              title: "ยืนยันส่งโพย",
-                              content: (
-                                <p>
-                                  ยอดลูกค้า {money(total)} บาท · ตัดเครดิต{" "}
-                                  {money(net)} บาท
-                                </p>
-                              ),
-                              confirm: () =>
-                                act(async () => {
-                                  await api.post(
-                                    "/bills" + (editId ? "/" + editId : ""),
-                                    { draw_id: draw.id, items, note },
-                                  );
-                                  setEditId(null);
-                                  setItems([]);
-                                  setNote("");
-                                  setMode("2 ตัว");
-                                  setText("");
-                                  setModal(null);
-                                }),
-                            })
-                          }
+                          onClick={async () => {
+                            if (submittingBill.current) return;
+                            submittingBill.current = true;
+                            setBusy(true);
+                            setBillStatus("");
+                            try {
+                              await api.post(
+                                "/bills" + (editId ? "/" + editId : ""),
+                                { draw_id: draw.id, items, note },
+                              );
+                              setEditId(null);
+                              setItems([]);
+                              setNote("");
+                              setMode("2 ตัว");
+                              setText("");
+                              setTop("");
+                              setBottom("");
+                              setBillStatus("ส่งโพยแล้ว");
+                              numberInput.current?.focus();
+                              try {
+                                await load();
+                              } catch {
+                                setBillStatus("ส่งโพยแล้ว แต่โหลดรายการล่าสุดไม่ได้ กรุณารีเฟรชหน้า");
+                              }
+                            } catch (e) {
+                              setBillStatus(e.response?.data?.error || e.message || "ส่งโพยไม่สำเร็จ");
+                            } finally {
+                              submittingBill.current = false;
+                              setBusy(false);
+                            }
+                          }}
                         >
-                          ยืนยันส่งโพย <ArrowRight size={17} />
+                          {submittingBill.current ? "กำลังส่งโพย…" : "ยืนยันส่งโพย"} <ArrowRight size={17} />
                         </button>
+                        {billStatus && <p role="status" aria-live="polite">{billStatus}</p>}
                       </section>
                     </div>
                     <section className="panel recent">

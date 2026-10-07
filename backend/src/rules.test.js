@@ -53,3 +53,14 @@ test("valid decimal amounts do not fail due to floating point representation", (
     price([{ number: "32", type: "2top", amount: 1.001 }], defaults),
   );
 });
+
+test("pricing preserves duplicate entries and their identity", () => {
+  const items = ["first", "second"].flatMap((entryId) => [
+    { entryId, number: "12", type: "2top", amount: 20 },
+    { entryId, number: "12", type: "2bottom", amount: 20 },
+  ]);
+  const bill = price(items, defaults);
+  assert.equal(bill.items.length, 4);
+  assert.deepEqual(bill.items.map((item) => item.entryId), ["first", "first", "second", "second"]);
+  assert.equal(bill.gross, 80);
+});

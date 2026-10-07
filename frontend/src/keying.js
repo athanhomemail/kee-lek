@@ -51,20 +51,17 @@ export function numbers(
     );
   }
   if (mode === "6 กลับ") {
-    if (!/^\d{3}$/.test(text)) throw Error("กรอกเลข 3 หลัก");
-    return permutations(text);
+    const batch = (text.match(/\d+/g) || []).filter((n) => n.length === 3);
+    if (!batch.length) throw Error("กรอกเลข 3 หลัก");
+    return batch.flatMap(permutations);
   }
   if (mode === "รูด" || mode === "วิ่ง") {
-    const selected = [...new Set(text.match(/\d/g) || [])];
+    const selected = text.match(/\d/g) || [];
     if (!selected.length) throw Error("ไม่พบตัวเลข");
     if (mode === "วิ่ง") return selected;
-    return [
-      ...new Set(
-        selected.flatMap((digit) =>
-          Array.from({ length: 10 }, (_, i) => [digit + i, i + digit]).flat(),
-        ),
-      ),
-    ];
+    return selected.flatMap((digit) => [
+      ...new Set(Array.from({ length: 10 }, (_, i) => [digit + i, i + digit]).flat()),
+    ]);
   }
   // Ignore pasted prices; the amounts below always apply to the whole batch.
   const stripped = text.replace(
@@ -73,13 +70,9 @@ export function numbers(
   );
   const out = (stripped.match(/\d+/g) || []).filter((n) => n.length === size);
   if (!out.length) throw Error("ไม่พบเลข " + size + " หลัก");
-  return [
-    ...new Set(
-      reverse && out.length === 1
-        ? out.flatMap((n) => [n, [...n].reverse().join("")])
-        : out,
-    ),
-  ];
+  return reverse
+    ? out.flatMap((n) => [n, [...n].reverse().join("")])
+    : out;
 }
 export function makeItems(nums, mode, top, bottom, digits) {
   const size =
@@ -89,38 +82,23 @@ export function makeItems(nums, mode, top, bottom, digits) {
   const first = mode === "วิ่ง" ? "runTop" : size === 3 ? "3top" : "2top";
   const second =
     mode === "วิ่ง" ? "runBottom" : size === 3 ? "3tod" : "2bottom";
-  return nums.flatMap((number) =>
-    [
-      { number, type: first, amount: Number(top) },
-      { number, type: second, amount: Number(bottom) },
-    ].filter((i) => i.amount > 0 && (mode !== "6 กลับ" || i.type === first)),
-  );
+  return nums.flatMap((number) => {
+    const entryId = crypto.randomUUID();
+    return [
+      { entryId, number, type: first, amount: Number(top) },
+      { entryId, number, type: second, amount: Number(bottom) },
+    ].filter((i) => i.amount > 0 && (mode !== "6 กลับ" || i.type === first));
+  });
 }
 export function summaryGroups(items) {
-  const byNumber = {};
-  for (const i of items) {
-    const category = i.type.startsWith("3")
-        ? "3 ตัว"
-        : i.type.startsWith("run")
-          ? "วิ่ง"
-          : "2 ตัว",
-      key = category + ":" + i.number;
-    const row = (byNumber[key] ??= {
-      category,
-      number: i.number,
-      top: 0,
-      bottom: 0,
-    });
-    if (
-      i.type.endsWith("bottom") ||
-      i.type === "3tod" ||
-      i.type === "runBottom"
-    )
-      row.bottom += i.amount;
-    else row.top += i.amount;
-  }
+  const entries = draftRows(items).map((row) => ({
+    category: row.category,
+    number: row.number,
+    top: row.amounts[row.types[0]] || 0,
+    bottom: row.amounts[row.types[1]] || 0,
+  }));
   const groups = {};
-  for (const row of Object.values(byNumber)) {
+  for (const row of entries) {
     const key = row.category + ":" + row.top + ":" + row.bottom;
     const g = (groups[key] ??= {
       category: row.category,
@@ -144,45 +122,35 @@ export function summaryModes(items) {
 }
 
 export function draftRows(items) {
-  const rows = new Map();
-  for (const item of items) {
-    const category = item.type.startsWith("3")
-      ? "3 ตัว"
-      : item.type.startsWith("run")
-        ? "วิ่ง"
-        : "2 ตัว";
-    const key = category + ":" + item.number;
-    if (!rows.has(key))
-      rows.set(key, {
-        key,
-        category,
-        number: item.number,
-        types:
-          category === "3 ตัว"
-            ? ["3top", "3tod"]
-            : category === "วิ่ง"
-              ? ["runTop", "runBottom"]
-              : ["2top", "2bottom"],
-        amounts: {},
-      });
-    const row = rows.get(key);
-    row.amounts[item.type] =
-      (row.amounts[item.type] || 0) + Number(item.amount);
-  }
-  return [...rows.values()];
+  const rows = [];
+  const identified = new Map();
+  items.forEach((item, index) => {
+    const category = item.type.startsWith("3") ? "3 ตัว" : item.type.startsWith("run") ? "วิ่ง" : "2 ตัว";
+    const types = category === "3 ตัว" ? ["3top", "3tod"] : category === "วิ่ง" ? ["runTop", "runBottom"] : ["2top", "2bottom"];
+    // Older bills have no entry ID: pair only consecutive top/bottom entries.
+    let row = item.entryId ? identified.get(item.entryId) : rows.at(-1);
+    if (!item.entryId && !(row && !row.entryId && row.number === item.number && row.category === category && row.indices.at(-1) === index - 1 && item.type === types[1] && row.amounts[types[0]] !== undefined && row.amounts[types[1]] === undefined)) row = null;
+    if (!row) {
+      row = { key: item.entryId || "legacy:" + index, entryId: item.entryId, category, number: item.number, types, amounts: {}, indices: [] };
+      rows.push(row);
+      if (item.entryId) identified.set(item.entryId, row);
+    }
+    row.amounts[item.type] = Number(item.amount);
+    row.indices.push(index);
+  });
+  return rows;
 }
-export function updateDraftAmount(items, number, type, amount) {
-  const next = [];
-  let inserted = false;
-  for (const item of items) {
-    if (item.number === number && item.type === type) {
-      if (!inserted && Number(amount) > 0)
-        next.push({ number, type, amount: Number(amount) });
-      inserted = true;
-    } else next.push(item);
-  }
-  if (!inserted && Number(amount) > 0)
-    next.push({ number, type, amount: Number(amount) });
+export function updateDraftAmount(items, key, type, amount) {
+  const row = draftRows(items).find((row) => row.key === key);
+  if (!row) return items;
+  const entryId = row.entryId || crypto.randomUUID();
+  const next = items.flatMap((item, index) => {
+    if (!row.indices.includes(index)) return [item];
+    if (item.type === type) return Number(amount) > 0 ? [{ ...item, entryId, amount: Number(amount) }] : [];
+    return [{ ...item, entryId }];
+  });
+  if (Number(amount) > 0 && row.amounts[type] === undefined)
+    next.splice(row.indices[0], 0, { entryId, number: row.number, type, amount: Number(amount) });
   return next;
 }
 
@@ -194,4 +162,15 @@ export function formatNumberInput(text, size) {
 
 export function blockedNumbers(nums, blocked = []) {
   return [...new Set(nums)].filter((number) => blocked?.includes(number));
+}
+
+// Keep each original entry, including duplicates.
+export function appendReversedNumbers(text, size) {
+  const stripped = text.replace(
+    /(?:=\s*\d+(?:\s*[*x×]\s*\d+)*|\d+\s*[*x×]\s*\d+(?:\s*[*x×]\s*\d+)*|\d+\s*(?:บน|ล่าง|โต๊ด|บาท)).*$/gm,
+    "",
+  );
+  const batch = (stripped.match(/\d+/g) || []).filter((n) => n.length === size);
+  if (size < 2 || !batch.length) return text;
+  return text + (stripped !== text ? "\n" : /\s$/.test(text) ? "" : " ") + batch.map((n) => [...n].reverse().join("")).join(" ");
 }

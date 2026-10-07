@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { numbers, makeItems } from "./keying.js";
+import { numbers, makeItems as makeItemsWithIds } from "./keying.js";
+const makeItems = (...args) => makeItemsWithIds(...args).map(({ entryId, ...item }) => item);
 test("pasted prices cannot become lottery numbers", () => {
   for (const text of [
     "17.18.19.10.11 50*50บนล่าง",
@@ -36,57 +37,26 @@ test("customer summary groups matching top and bottom amounts", async () => {
   ]);
 });
 
-test("summary keeps different prices inside one category and preserves summed amounts", async () => {
-  const { summaryModes } = await import("./keying.js");
-  const groups = summaryModes([
-    { number: "10", type: "2top", amount: 100 },
-    { number: "43", type: "2top", amount: 60 },
-    { number: "43", type: "2top", amount: 40 },
-    { number: "43", type: "2bottom", amount: 50 },
-    { number: "34", type: "2top", amount: 100 },
-    { number: "34", type: "2bottom", amount: 50 },
-    { number: "123", type: "3top", amount: 20 },
-  ]);
-  assert.deepEqual(groups[0], {
-    category: "2 ตัว",
-    rows: [
-      { category: "2 ตัว", top: 100, bottom: 0, numbers: ["10"] },
-      { category: "2 ตัว", top: 100, bottom: 50, numbers: ["43", "34"] },
-    ],
-  });
-  assert.equal(groups.length, 2);
-  assert.equal(groups[1].category, "3 ตัว");
+test("duplicates stay separate in the draft and customer receipt", async () => {
+  const { draftRows, summaryModes, updateDraftAmount } = await import("./keying.js");
+  const items = [...makeItemsWithIds(numbers("12 12", "2 ตัว"), "2 ตัว", 20, 20, 2), ...makeItemsWithIds(["12"], "2 ตัว", 20, 20, 2)];
+  const rows = draftRows(items);
+  assert.equal(rows.length, 3);
+  assert.equal(new Set(rows.map((row) => row.key)).size, 3);
+  assert.deepEqual(summaryModes(items)[0].rows, [{ category: "2 ตัว", top: 20, bottom: 20, numbers: ["12", "12", "12"] }]);
+  const changed = updateDraftAmount(items, rows[1].key, "2top", 50);
+  assert.deepEqual(draftRows(changed).map((row) => row.amounts["2top"]), [20, 50, 20]);
+  const removed = items.filter((_, index) => !rows[1].indices.includes(index));
+  assert.equal(draftRows(removed).length, 2);
+  assert.equal(items.reduce((sum, item) => sum + item.amount, 0), 120);
 });
-
-test("draft combines paired amounts, isolates categories and updates duplicates once", async () => {
+test("legacy rows pair only consecutive amounts and preserve repeated entries", async () => {
   const { draftRows, updateDraftAmount } = await import("./keying.js");
-  const items = [
-    { number: "10", type: "2top", amount: 100 },
-    { number: "10", type: "2bottom", amount: 50 },
-    { number: "10", type: "2top", amount: 20 },
-    { number: "123", type: "3tod", amount: 30 },
-  ];
-  assert.equal(draftRows(items).length, 2);
-  assert.deepEqual(draftRows(items)[0].amounts, { "2top": 120, "2bottom": 50 });
-  const edited = updateDraftAmount(items, "10", "2top", 80);
-  assert.equal(edited.filter((i) => i.type === "2top").length, 1);
-  assert.equal(draftRows(edited)[0].amounts["2top"], 80);
-  assert.equal(
-    updateDraftAmount(edited, "10", "2bottom", 0).some(
-      (i) => i.type === "2bottom",
-    ),
-    false,
-  );
-  assert.equal(
-    draftRows(updateDraftAmount(items, "123", "3top", 40))[1].amounts["3top"],
-    40,
-  );
-  assert.equal(
-    items.filter(
-      (i) => !(i.number === "10" && draftRows(items)[0].types.includes(i.type)),
-    ).length,
-    1,
-  );
+  const items = makeItems(["12", "12"], "2 ตัว", 20, 20, 2);
+  const rows = draftRows(items);
+  assert.equal(rows.length, 2);
+  assert.deepEqual(draftRows(updateDraftAmount(items, rows[0].key, "2bottom", 40)).map((row) => row.amounts["2bottom"]), [40, 20]);
+  assert.equal(draftRows(makeItems(["12", "12"], "2 ตัว", 20, 0, 2)).length, 2);
 });
 
 test("auto spacing preserves digit batches, leading zeroes and partial input", async () => {
@@ -97,11 +67,11 @@ test("auto spacing preserves digit batches, leading zeroes and partial input", a
   assert.equal(formatNumberInput("12 34\n56", 2), "12 34\n56");
   assert.equal(formatNumberInput("", 2), "");
 });
-test("running and rood accept multiple pasted or typed digits and deduplicate", () => {
-  assert.deepEqual(numbers("1 2 1", "วิ่ง"), ["1", "2"]);
+test("running and rood preserve input occurrences", () => {
+  assert.deepEqual(numbers("1 2 1", "วิ่ง"), ["1", "2", "1"]);
   assert.deepEqual(numbers("123", "วิ่ง"), ["1", "2", "3"]);
   const output = numbers("1\n2", "รูด");
-  assert.equal(output.length, 36);
+  assert.equal(output.length, 38);
   assert.ok(output.includes("10") && output.includes("02"));
 });
 test("win calculator supports larger sets, optional doubles and three tod amounts", () => {
@@ -158,4 +128,21 @@ test("closed number detection handles generated, reversed and multiple batches",
   ]);
   assert.deepEqual(blockedNumbers(["12", "12", "34"], ["12"]), ["12"]);
   assert.deepEqual(blockedNumbers(["12"], undefined), []);
+});
+
+test("keyboard reversal appends every entry without losing original duplicates or zeroes", async () => {
+  const { appendReversedNumbers } = await import("./keying.js");
+  assert.equal(appendReversedNumbers("12 21 14", 2), "12 21 14 21 12 41");
+  assert.equal(appendReversedNumbers("01 01 11", 2), "01 01 11 10 10 11");
+  assert.equal(appendReversedNumbers("123 012", 3), "123 012 321 210");
+  assert.equal(appendReversedNumbers("12 3", 2), "12 3 21");
+  assert.equal(appendReversedNumbers("", 2), "");
+  assert.equal(appendReversedNumbers("1 2", 1), "1 2");
+  assert.equal(appendReversedNumbers("12 14 =50", 2), "12 14 =50\n21 41");
+  assert.deepEqual(numbers(appendReversedNumbers("12 14 =50", 2), "2 ตัว"), ["12", "14", "21", "41"]);
+  assert.deepEqual(numbers(appendReversedNumbers("12 21 14", 2), "2 ตัว"), ["12", "21", "14", "21", "12", "41"]);
+});
+
+test("six reverse preserves separate input entries", () => {
+  assert.equal(numbers("123 321", "6 กลับ").length, 12);
 });
