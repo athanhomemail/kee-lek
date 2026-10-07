@@ -1268,36 +1268,6 @@ footer {
     height: 28px;
   }
 }
-.settings-page form.rates-form {
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  gap: 12px;
-}
-.settings-page form.rates-form > label {
-  grid-column: span 2;
-  background: #faf8fc;
-  border: 1px solid #f1edf5;
-  padding: 15px;
-  border-radius: 14px;
-  margin: 0;
-}
-.settings-page form.rates-form > label:nth-child(-n + 2) {
-  grid-column: span 3;
-  background: #fff8f1;
-  border-color: #f5e6d8;
-}
-.rates-form input {
-  background: white;
-}
-@media (max-width: 600px) {
-  .settings-page form.rates-form {
-    grid-template-columns: 1fr;
-  }
-  .settings-page form.rates-form > label,
-  .settings-page form.rates-form > label:nth-child(-n + 2) {
-    grid-column: 1;
-    padding: 13px;
-  }
-}
 @keyframes reveal {
   from {
     opacity: 0;
@@ -1614,13 +1584,6 @@ footer {
   }
   .settings-page > section > form {
     grid-template-columns: 1fr;
-  }
-  .settings-page form.rates-form {
-    grid-template-columns: 1fr;
-  }
-  .settings-page form.rates-form > label,
-  .settings-page form.rates-form > label:nth-child(-n + 2) {
-    grid-column: 1;
   }
   .item-list .item {
     flex-wrap: wrap;
@@ -2698,4 +2661,33 @@ footer {
 }
 .number-entry-badge button:hover {
   background: #dbe4ff;
+}
+
+/* Keep each bet type's payout and limit together at every screen width. */
+.settings-page form.leader-rates-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 20px;
+}
+.rate-explanation {
+  background: #fff8f1;
+  border: 1px solid #f5e6d8;
+  border-radius: 14px;
+  padding: 16px;
+}
+.rate-explanation h3 { margin: 0 0 8px; }
+.rate-explanation p { margin: 6px 0 0; line-height: 1.7; }
+.rate-group { min-width: 0; margin: 0; padding: 16px; border: 1px solid #e9e2ee; border-radius: 16px; }
+.rate-group legend { padding: 0 8px; font-weight: 700; }
+.rate-type-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.rate-type-card { min-width: 0; background: #faf8fc; border-radius: 12px; padding: 16px; }
+.rate-type-card h4 { margin: 0 0 16px; font-size: 1rem; }
+.rate-type-card label { display: grid; gap: 8px; margin: 0 0 14px; }
+.rate-type-card label:last-child { margin-bottom: 0; }
+.rate-type-card input { width: 100%; min-width: 0; background: white; }
+.leader-rates-form .rate-save { justify-self: start; }
+@media (max-width: 600px) {
+  .rate-type-grid { grid-template-columns: minmax(0, 1fr); }
+  .rate-group { padding: 12px; }
+  .leader-rates-form .rate-save { width: 100%; }
 }

@@ -47,15 +47,6 @@ export async function cleanup(connection, mode, adminId) {
   await connection.beginTransaction();
   try {
     await connection.query("SELECT id FROM users ORDER BY id FOR UPDATE");
-    if (mode === "bills") {
-      await connection.query(
-        "INSERT INTO credit_ledger(member_id,actor_id,amount,reason) SELECT member_id,?,SUM(net),'คืนเครดิตจากการล้างโพยโดย Admin' FROM bills WHERE status='active' GROUP BY member_id",
-        [adminId],
-      );
-      await connection.query(
-        "UPDATE users u JOIN (SELECT member_id,SUM(net) AS refund FROM bills WHERE status='active' GROUP BY member_id) b ON b.member_id=u.id SET u.credit=u.credit+b.refund",
-      );
-    }
     const deleted = {};
     for (const table of plan.tables) {
       const [result] = await connection.query(
@@ -71,8 +62,6 @@ export async function cleanup(connection, mode, adminId) {
         deleted.users += leaders.affectedRows;
       }
     }
-    if (["transactions", "launch"].includes(mode))
-      await connection.query("UPDATE users SET credit=0 WHERE role='Member'");
     await connection.commit();
     return deleted;
   } catch (error) {

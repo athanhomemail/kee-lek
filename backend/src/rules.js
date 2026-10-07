@@ -1,7 +1,6 @@
 export const types = ["2top", "2bottom", "3top", "3tod", "runTop", "runBottom"];
 export const defaults = {
   limit: 1000,
-  discount: 0,
   rates: {
     "2top": 95,
     "2bottom": 95,
@@ -32,14 +31,13 @@ export function price(items, config) {
     )
       throw Error("เลขหรือจำนวนเงินไม่ถูกต้อง");
     if (config.blocked.includes(i.number)) throw Error("มีเลขปิดรับในโพย");
-    const discount = Number(config.discounts?.[i.type] ?? config.discount ?? 0);
+    const { discount, net, ...item } = i;
     return {
-      ...i,
-      discount,
+      ...item,
       rate:
         Number(config.rates[i.type]) *
         (config.half.includes(i.number) ? 0.5 : 1),
-      net: Math.round(i.amount * (1 - discount / 100) * 100) / 100,
+      net: i.amount,
     };
   });
   return {

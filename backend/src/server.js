@@ -30,9 +30,10 @@ const bangkok = (value) =>
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? value + ":00+07:00" : value,
   );
 const clean = (u) => {
-  const { password, ...rest } = u;
+  const { password, credit, ...rest } = u;
   return rest;
 };
+const cleanConfig = ({ discount, discounts, ...config }) => config;
 async function identity(token) {
   const { id } = jwt.verify(token, process.env.JWT_SECRET);
   const [u] = await query("SELECT * FROM users WHERE id=? AND active=1", [id]);
@@ -168,12 +169,6 @@ app.get(
       "SELECT * FROM draw_settings WHERE leader_id=?",
       [leader],
     );
-    const requests = await query(
-      u.role === "Leader"
-        ? "SELECT * FROM credit_requests WHERE leader_id=?"
-        : "SELECT * FROM credit_requests WHERE member_id=?",
-      [u.id],
-    );
     const notifications = await query(
       "SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 30",
       [u.id],
@@ -203,11 +198,11 @@ app.get(
       users: users.map(clean),
       bills: bills.map((b) => ({
         ...b,
+        items: b.items.map(({ discount, ...item }) => item),
         win: winnings(b, draws.find((d) => d.id === b.draw_id) || {}),
       })),
-      settings,
-      drawSettings,
-      requests,
+      settings: settings.map((s) => ({ ...s, config: cleanConfig(s.config) })),
+      drawSettings: drawSettings.map((s) => ({ ...s, config: cleanConfig(s.config) })),
       notifications,
       usage: teamBills.map((b) => ({
         draw_id: b.draw_id,
@@ -256,7 +251,7 @@ app.post(
 );
 app.patch(
   "/api/users/:id",
-  role(["Admin", "Leader"]),
+  role(["Admin"]),
   route(async (req, res) => {
     const conn = await db.getConnection();
     try {
@@ -281,25 +276,6 @@ app.patch(
           [bangkok(req.body.expires_at), req.body.active ? 1 : 0, target.id],
           conn,
         );
-      } else {
-        const amount = Number(req.body.amount);
-        if (
-          !Number.isFinite(amount) ||
-          Math.abs(Math.round(amount * 100) - amount * 100) > 1e-6 ||
-          target.credit + amount < 0
-        )
-          throw Error("จำนวนเครดิตไม่ถูกต้อง");
-        await query(
-          "UPDATE users SET credit=credit+? WHERE id=?",
-          [amount, target.id],
-          conn,
-        );
-        await query(
-          "INSERT INTO credit_ledger(member_id,actor_id,amount,reason) VALUES (?,?,?,?)",
-          [target.id, req.user.id, amount, "ปรับเครดิต"],
-          conn,
-        );
-        await notify(target.id, "เครดิตเปลี่ยนแปลง " + amount + " บาท", conn);
       }
       await conn.commit();
       io.to("user:" + target.id).emit("refresh");
@@ -382,13 +358,11 @@ app.post(
   "/api/settings/:lottery",
   role(["Leader"]),
   route(async (req, res) => {
-    const c = { ...defaults, ...req.body };
+    const { discount, discounts, ...settings } = req.body;
+    const c = { ...defaults, ...settings };
     if (
       !Number.isFinite(Date.parse(c.closeAt)) ||
       !(c.limit > 0) ||
-      !Number.isFinite(Number(c.discount)) ||
-      c.discount < 0 ||
-      c.discount > 100 ||
       !Array.isArray(c.blocked) ||
       !Array.isArray(c.half) ||
       Object.keys(defaults.rates).some(
@@ -396,9 +370,6 @@ app.post(
       ) ||
       Object.values(c.limits || {}).some(
         (n) => !Number.isFinite(Number(n)) || Number(n) <= 0,
-      ) ||
-      Object.values(c.discounts || {}).some(
-        (n) => !Number.isFinite(Number(n)) || n < 0 || n > 100,
       )
     )
       throw Error("การตั้งค่าไม่ถูกต้อง");
@@ -525,7 +496,7 @@ app.post(
   route(async (req, res) => {
     const c = await db.getConnection();
     try {
-      await c.beginTransaction(); // Serializes all submissions and credit changes in the team.
+      await c.beginTransaction(); // Serializes team submissions to enforce per-number limits.
       const [leader] = await query(
         "SELECT * FROM users WHERE id=? FOR UPDATE",
         [req.user.leader_id],
@@ -588,8 +559,6 @@ app.post(
         if (totals[key] > Number(config.limits?.[i.type] ?? config.limit))
           throw Error("เลข " + i.number + " เกินวงเงินรับซื้อ");
       }
-      if (member.credit + (previous?.net || 0) < bill.net)
-        throw Error("เครดิตไม่พอ");
       let r;
       if (previous) {
         await query(
@@ -618,21 +587,6 @@ app.post(
           ],
           c,
         );
-      await query(
-        "UPDATE users SET credit=credit-? WHERE id=?",
-        [bill.net - (previous?.net || 0), member.id],
-        c,
-      );
-      await query(
-        "INSERT INTO credit_ledger(member_id,actor_id,amount,reason) VALUES (?,?,?,?)",
-        [
-          member.id,
-          member.id,
-          (previous?.net || 0) - bill.net,
-          (previous ? "แก้ไขโพย #" : "ส่งโพย #") + r.insertId,
-        ],
-        c,
-      );
       await notify(
         leader.id,
         member.name + " ส่งโพย #" + r.insertId + " ยอด " + bill.gross + " บาท",
@@ -682,100 +636,8 @@ app.delete(
       )
         throw Error("ปิดรับแล้ว");
       await query("UPDATE bills SET status='cancelled' WHERE id=?", [b.id], c);
-      await query(
-        "UPDATE users SET credit=credit+? WHERE id=?",
-        [b.net, req.user.id],
-        c,
-      );
-      await query(
-        "INSERT INTO credit_ledger(member_id,actor_id,amount,reason) VALUES (?,?,?,?)",
-        [req.user.id, req.user.id, b.net, "ยกเลิกโพย #" + b.id],
-        c,
-      );
       await c.commit();
       changed(b.leader_id);
-      res.json({ ok: true });
-    } catch (e) {
-      await c.rollback();
-      throw e;
-    } finally {
-      c.release();
-    }
-  }),
-);
-app.post(
-  "/api/credit-requests",
-  role(["Member"]),
-  route(async (req, res) => {
-    const amount = Number(req.body.amount);
-    if (
-      !Number.isFinite(amount) ||
-      amount <= 0 ||
-      amount > 1e9 ||
-      Math.abs(Math.round(amount * 100) - amount * 100) > 1e-6
-    )
-      throw Error("ยอดเครดิตไม่ถูกต้อง");
-    await query(
-      "INSERT INTO credit_requests(member_id,leader_id,amount) VALUES (?,?,?)",
-      [req.user.id, req.user.leader_id, amount],
-    );
-    await notify(
-      req.user.leader_id,
-      req.user.name + " ขอเครดิต " + amount + " บาท",
-    );
-    changed(req.user.leader_id);
-    res.json({ ok: true });
-  }),
-);
-app.patch(
-  "/api/credit-requests/:id",
-  role(["Leader"]),
-  route(async (req, res) => {
-    const c = await db.getConnection();
-    try {
-      await c.beginTransaction();
-      await query(
-        "SELECT id FROM users WHERE id=? FOR UPDATE",
-        [req.user.id],
-        c,
-      );
-      const [r] = await query(
-        "SELECT * FROM credit_requests WHERE id=? AND leader_id=? AND status='pending' FOR UPDATE",
-        [req.params.id, req.user.id],
-        c,
-      );
-      if (!r) throw Error("คำขอนี้ดำเนินการแล้ว");
-      const status = req.body.approve ? "approved" : "rejected";
-      if (status === "rejected" && !req.body.note?.trim())
-        throw Error("กรุณาระบุเหตุผล");
-      await query(
-        "UPDATE credit_requests SET status=?,note=? WHERE id=?",
-        [status, String(req.body.note || "").slice(0, 500), r.id],
-        c,
-      );
-      if (req.body.approve) {
-        await query(
-          "UPDATE users SET credit=credit+? WHERE id=?",
-          [r.amount, r.member_id],
-          c,
-        );
-        await query(
-          "INSERT INTO credit_ledger(member_id,actor_id,amount,reason) VALUES (?,?,?,?)",
-          [r.member_id, req.user.id, r.amount, "อนุมัติคำขอ #" + r.id],
-          c,
-        );
-      }
-      await notify(
-        r.member_id,
-        (req.body.approve ? "อนุมัติ" : "ปฏิเสธ") +
-          "คำขอเครดิต " +
-          r.amount +
-          " บาท " +
-          (req.body.note || ""),
-        c,
-      );
-      await c.commit();
-      changed(req.user.id);
       res.json({ ok: true });
     } catch (e) {
       await c.rollback();

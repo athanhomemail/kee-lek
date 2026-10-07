@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { price, defaults, winnings } from "./rules.js";
-test("discount applies only to configured bet types", () => {
+test("legacy discounts are ignored and full amounts are recorded", () => {
   const b = price(
     [
       { number: "32", type: "2top", amount: 100 },
@@ -10,7 +10,8 @@ test("discount applies only to configured bet types", () => {
     { ...defaults, discounts: { "2top": 10, "3top": 0 } },
   );
   assert.equal(b.gross, 300);
-  assert.equal(b.net, 290);
+  assert.equal(b.net, 300);
+  assert.ok(b.items.every((item) => !Object.hasOwn(item, "discount")));
 });
 test("blocked numbers and malformed amounts are rejected", () => {
   assert.throws(() =>

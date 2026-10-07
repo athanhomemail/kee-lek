@@ -4,7 +4,7 @@ import { db } from "../src/db.js";
 import { cleanup } from "../src/maintenance.js";
 const enabled = process.env.RUN_INTEGRATION === "1";
 test(
-  "maintenance uses an isolated temporary schema: refunds, resets and rollback",
+  "maintenance uses an isolated temporary schema: legacy balances preserved and rollback",
   { skip: !enabled },
   async () => {
     const c = await db.getConnection();
@@ -57,9 +57,9 @@ test(
       assert.equal(await count("bills"), 0);
       assert.equal(
         (await c.query("SELECT credit FROM users WHERE id=3"))[0][0].credit,
-        600,
+        500,
       );
-      assert.equal(await count("credit_ledger"), 2);
+      assert.equal(await count("credit_ledger"), 1);
       assert.equal(await count("draws"), 1);
       await seed();
       await cleanup(c, "notifications", 1);
@@ -71,7 +71,7 @@ test(
       assert.equal(await count("draws"), 1);
       assert.equal(
         (await c.query("SELECT credit FROM users WHERE id=3"))[0][0].credit,
-        0,
+        500,
       );
       await seed();
       await cleanup(c, "launch", 1);

@@ -15,7 +15,6 @@ import {
   Bell,
   ArrowRight,
   Plus,
-  Wallet,
   Check,
   X,
   Copy,
@@ -323,20 +322,7 @@ export default function App() {
       </label>
     </div>
   );
-  const total = items.reduce((s, i) => s + i.amount, 0),
-    net = items.reduce(
-      (s, i) =>
-        s +
-        Math.round(
-          i.amount *
-            (1 -
-              Number(config?.discounts?.[i.type] ?? config?.discount ?? 0) /
-                100) *
-            100,
-        ) /
-          100,
-      0,
-    );
+  const total = items.reduce((s, i) => s + i.amount, 0);
   const available = (i) =>
     Number(config?.limits?.[i.type] ?? config?.limit ?? 0) -
     (state.usage || [])
@@ -653,35 +639,6 @@ export default function App() {
           >
             <Settings size={18} />
           </button>
-          {u.role === "Member" && (
-            <button
-              className="credit"
-              onClick={() =>
-                setModal({
-                  title: "ขอเพิ่มเครดิต",
-                  content: (
-                    <Form
-                      fields={[
-                        {
-                          name: "amount",
-                          label: "จำนวนเครดิตที่ต้องการ",
-                          type: "number",
-                        },
-                      ]}
-                      onSubmit={(v) =>
-                        act(async () => {
-                          await api.post("/credit-requests", v);
-                          setModal(null);
-                        })
-                      }
-                    />
-                  ),
-                })
-              }
-            >
-              <Wallet size={17} /> ฿{money(u.credit)} <Plus size={15} />
-            </button>
-          )}
           <button
             className="logout-button"
             title="ออกจากระบบ"
@@ -1002,7 +959,20 @@ export default function App() {
                           </div>
                         )}
                         <div className="keying-tools">
-                          {" "}
+                          <button
+                            type="button"
+                            disabled={!text && !winDigits}
+                            onClick={() => {
+                              setText("");
+                              setWinDigits("");
+                              setExcludedNumbers([]);
+                              setPasted(false);
+                              reverseBatch.current = null;
+                              numberInput.current?.focus();
+                            }}
+                          >
+                            <Trash2 size={16} /> ล้างเลขทั้งหมด
+                          </button>
                           {inputSize > 1 && (
                             <span className="muted small">Spacebar: เพิ่ม / เอาเลขกลับออก</span>
                           )}
@@ -1398,13 +1368,7 @@ export default function App() {
                         </label>
                         <div className="totals">
                           <p>
-                            ลูกค้าชำระ <b>฿{money(total)}</b>
-                          </p>
-                          <p>
-                            ส่วนลดของคุณ <b>฿{money(total - net)}</b>
-                          </p>
-                          <p>
-                            ตัดเครดิต <strong>฿{money(net)}</strong>
+                            ยอดรวม <b>฿{money(total)}</b>
                           </p>
                         </div>
                         <button
@@ -1541,12 +1505,6 @@ export default function App() {
                           .reduce((s, b) => s + b.gross, 0),
                       ],
                       [
-                        "ส่วนลด",
-                        scopedBills
-                          .filter((b) => b.status === "active")
-                          .reduce((s, b) => s + b.gross - b.net, 0),
-                      ],
-                      [
                         "ยอดถูกรางวัล",
                         scopedBills
                           .filter((b) => b.status === "active")
@@ -1647,7 +1605,6 @@ export default function App() {
                       ))}
                     <p className="muted small">
                       ยอดรางวัลแสดงเพื่อสรุปเท่านั้น
-                      ยังไม่มีการเพิ่มรางวัลกลับเข้าเครดิตอัตโนมัติ
                     </p>
                   </section>
                 </>
@@ -1664,7 +1621,6 @@ export default function App() {
                     <p>
                       {u.username} · {u.role}
                     </p>
-                    <p>เครดิต ฿{money(u.credit)}</p>
                     <button onClick={password}>เปลี่ยนรหัสผ่าน</button>
                   </section>
                   {u.role === "Leader" && (
@@ -1750,13 +1706,12 @@ function Bill({ b, state, cancel, edit }) {
           <strong>{i.number}</strong>
           <span>{labels[i.type]}</span>
           <span>
-            ฿{money(i.amount)} · ลด {i.discount}% · จ่าย {i.rate}
+            ฿{money(i.amount)} · จ่าย {i.rate}
           </span>
         </div>
       ))}
       <p>
-        ลูกค้าชำระ {money(b.gross)} · ส่วนลด {money(b.gross - b.net)} ·
-        ตัดเครดิต {money(b.net)}
+        ยอดรวม {money(b.gross)} บาท
       </p>
       <p>
         ถูกรางวัล {money(b.win)} บาท · {b.note || "ไม่มีหมายเหตุ"}
@@ -1817,78 +1772,8 @@ function Team({ state, act, modal }) {
               {m.username} · {m.phone}
             </small>
           </div>
-          <b>฿{money(m.credit)}</b>
-          <button
-            onClick={() =>
-              modal({
-                title: "ปรับเครดิต " + m.name,
-                content: (
-                  <Form
-                    fields={[
-                      {
-                        name: "amount",
-                        label: "จำนวนเพิ่ม / ลด (ใส่ค่าติดลบเพื่อลด)",
-                        type: "number",
-                      },
-                    ]}
-                    onSubmit={(v) =>
-                      act(async () => {
-                        await api.patch("/users/" + m.id, v);
-                        modal(null);
-                      })
-                    }
-                  />
-                ),
-              })
-            }
-          >
-            ปรับเครดิต
-          </button>
         </div>
       ))}
-      <h3>คำขอเพิ่มเครดิต</h3>
-      {state.requests
-        .filter((r) => r.status === "pending")
-        .map((r) => (
-          <div className="item" key={r.id}>
-            <span>
-              {state.users.find((u) => u.id === r.member_id)?.name} · ฿
-              {money(r.amount)}
-            </span>
-            <button
-              onClick={() =>
-                act(() =>
-                  api.patch("/credit-requests/" + r.id, { approve: true }),
-                )
-              }
-            >
-              <Check size={17} /> อนุมัติ
-            </button>
-            <button
-              onClick={() =>
-                modal({
-                  title: "ปฏิเสธคำขอ",
-                  content: (
-                    <Form
-                      fields={[{ name: "note", label: "เหตุผล" }]}
-                      onSubmit={(v) =>
-                        act(async () => {
-                          await api.patch("/credit-requests/" + r.id, {
-                            ...v,
-                            approve: false,
-                          });
-                          modal(null);
-                        })
-                      }
-                    />
-                  ),
-                })
-              }
-            >
-              ปฏิเสธ
-            </button>
-          </div>
-        ))}
     </section>
   );
 }
@@ -2333,70 +2218,75 @@ function SettingsPage({ state, act, modal }) {
               <h2>
                 <LotteryFlag flag={l.flag} /> {l.name}
               </h2>
-              <Form
-                className="rates-form"
-                fields={[
-                  {
-                    name: "limit",
-                    label: "รับสูงสุดต่อเลข / ประเภท / งวด",
-                    type: "number",
-                    value: c.limit,
-                  },
-                  {
-                    name: "discount",
-                    label: "ส่วนลดค่าเริ่มต้น (%)",
-                    type: "number",
-                    value: c.discount,
-                  },
-                  ...Object.keys(labels).flatMap((type) => [
-                    {
-                      name: "limit_" + type,
-                      label: labels[type] + " — รับสูงสุดต่อเลข",
-                      type: "number",
-                      value: c.limits?.[type] ?? c.limit,
-                    },
-                    {
-                      name: type,
-                      label: labels[type] + " — อัตราจ่ายต่อบาท",
-                      type: "number",
-                      value: c.rates[type],
-                    },
-                    {
-                      name: "discount_" + type,
-                      label: labels[type] + " — ส่วนลด (%)",
-                      type: "number",
-                      value: c.discounts?.[type] ?? c.discount,
-                    },
-                  ]),
-                ]}
-                onSubmit={(v) =>
+              <form
+                className="leader-rates-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  const v = Object.fromEntries(new FormData(event.currentTarget));
                   act(async () => {
                     await api.post("/settings/" + l.id, {
                       closeAt: new Date().toISOString(),
-                      limit: Number(v.limit),
-                      discount: Number(v.discount),
+                      limit: c.limit,
                       limits: Object.fromEntries(
-                        Object.keys(labels).map((k) => [
-                          k,
-                          Number(v["limit_" + k]),
-                        ]),
+                        Object.keys(labels).map((k) => [k, Number(v["limit_" + k])]),
                       ),
                       rates: Object.fromEntries(
                         Object.keys(labels).map((k) => [k, Number(v[k])]),
-                      ),
-                      discounts: Object.fromEntries(
-                        Object.keys(labels).map((k) => [
-                          k,
-                          Number(v["discount_" + k]),
-                        ]),
                       ),
                       blocked: [],
                       half: [],
                     });
                     modal({ title: "บันทึกการตั้งค่าแล้ว" });
-                  })
-                }
-              />
+                  });
+                }}
+              >
+                <div className="rate-explanation">
+                  <h3>อัตราจ่ายและวงเงินรับต่อเลข</h3>
+                  <p>วงเงินนับยอดรวมของสมาชิกทั้งเครือข่าย แยกตามเลข ประเภท และงวด</p>
+                  <p>เช่น 2 ตัวบนรับเลขละ 1,000 บาท: เลข 12 รับรวมได้ 1,000 บาทในหนึ่งงวด เลขอื่นและ 2 ตัวล่างนับวงเงินแยกกัน</p>
+                </div>
+                {[
+                  ["2 ตัว", ["2top", "2bottom"]],
+                  ["3 ตัว", ["3top", "3tod"]],
+                  ["วิ่ง", ["runTop", "runBottom"]],
+                ].map(([group, types]) => (
+                  <fieldset className="rate-group" key={group}>
+                    <legend>{group}</legend>
+                    <div className="rate-type-grid">
+                      {types.map((type) => (
+                        <section className="rate-type-card" key={type}>
+                          <h4>{labels[type]}</h4>
+                          <label>
+                            อัตราจ่ายต่อ 1 บาท
+                            <input
+                              aria-label={labels[type] + " — อัตราจ่ายต่อ 1 บาท"}
+                              name={type}
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              required
+                              defaultValue={c.rates[type]}
+                            />
+                          </label>
+                          <label>
+                            รับสูงสุดต่อเลขในหนึ่งงวด (บาท)
+                            <input
+                              aria-label={labels[type] + " — รับสูงสุดต่อเลขในหนึ่งงวด (บาท)"}
+                              name={"limit_" + type}
+                              type="number"
+                              min="0.01"
+                              step="0.01"
+                              required
+                              defaultValue={c.limits?.[type] ?? c.limit}
+                            />
+                          </label>
+                        </section>
+                      ))}
+                    </div>
+                  </fieldset>
+                ))}
+                <button className="primary rate-save">บันทึกอัตราจ่ายและวงเงิน</button>
+              </form>
             </section>
           );
         })}

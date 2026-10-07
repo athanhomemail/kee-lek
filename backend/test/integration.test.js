@@ -5,14 +5,14 @@ import { randomBytes } from "node:crypto";
 import { db } from "../src/db.js";
 const enabled = process.env.RUN_INTEGRATION === "1";
 test(
-  "API roles, discounts, concurrency, editing, cancellation and credit approvals",
+  "API records without credit or discounts, concurrency, editing and cancellation",
   { skip: !enabled },
   async () => {
     const root = "test_" + randomBytes(6).toString("hex"),
       password = "Test-only-password-123!";
     let admin, leader, member1, member2, lottery, draw;
     async function api(path, token, body, method = body ? "POST" : "GET") {
-      const r = await fetch("http://127.0.0.1:4000/api" + path, {
+      const r = await fetch((process.env.TEST_API_URL || "http://127.0.0.1:4000/api") + path, {
         method,
         headers: {
           "Content-Type": "application/json",
@@ -20,7 +20,9 @@ test(
         },
         body: body ? JSON.stringify(body) : undefined,
       });
-      const data = await r.json();
+      const raw = await r.text();
+      let data;
+      try { data = JSON.parse(raw); } catch { data = { error: raw }; }
       return { status: r.status, data };
     }
     async function login(username, pw = password) {
@@ -71,7 +73,7 @@ test(
         await api("/password", m, { current: r.data.password, password });
         const id = (await api("/me", m)).data.id;
         members.push({ token: m, id });
-        await api("/users/" + id, l, { amount: 5000 }, "PATCH");
+        assert.equal((await api("/users/" + id, l, { amount: 5000 }, "PATCH")).status, 403);
       }
       [member1, member2] = members.map((m) => m.id);
       assert.equal((await api("/state", a)).data.accessExpiresAt, null);
@@ -214,7 +216,12 @@ test(
       r = await api("/bills", members[0].token, bill);
       assert.equal(r.status, 200, JSON.stringify(r.data));
       const billId = r.data.id;
-      assert.equal((await api("/me", members[0].token)).data.credit, 4710);
+      assert.equal((await api("/me", members[0].token)).data.credit, undefined);
+      const recorded = (await api("/state", members[0].token)).data.bills.find((b) => b.id === billId);
+      assert.equal(recorded.gross, 300);
+      assert.equal(recorded.net, 300);
+      assert.ok(recorded.items.every((i) => !Object.hasOwn(i, "discount")));
+      assert.equal((await q("SELECT credit FROM users WHERE id=?", [member1]))[0].credit, 0);
       assert.equal(
         (await api("/bills/" + billId, members[1].token, bill)).status,
         400,
@@ -229,18 +236,18 @@ test(
         ).status,
         200,
       );
-      assert.equal((await api("/me", members[0].token)).data.credit, 4820);
+      assert.equal((await q("SELECT credit FROM users WHERE id=?", [member1]))[0].credit, 0);
       assert.equal(
         (await api("/bills/" + billId, members[0].token, null, "DELETE"))
           .status,
         200,
       );
-      assert.equal((await api("/me", members[0].token)).data.credit, 5000);
+      assert.equal((await q("SELECT credit FROM users WHERE id=?", [member1]))[0].credit, 0);
       assert.equal(
         (await api("/bills/" + billId, members[0].token, null, "DELETE"))
           .status,
         400,
-        "no double refunds",
+        "cannot cancel twice",
       );
       assert.equal(
         (
@@ -277,25 +284,13 @@ test(
         ).status,
         403,
       );
-      await api("/credit-requests", members[0].token, { amount: 250 });
-      const req = (await api("/state", l)).data.requests.find(
-        (r) => r.member_id === member1 && r.status === "pending",
-      );
-      const before = (await api("/me", members[0].token)).data.credit;
-      assert.equal(
-        (await api("/credit-requests/" + req.id, l, { approve: true }, "PATCH"))
-          .status,
-        200,
-      );
-      assert.equal(
-        (await api("/credit-requests/" + req.id, l, { approve: true }, "PATCH"))
-          .status,
-        400,
-      );
-      assert.equal(
-        (await api("/me", members[0].token)).data.credit,
-        before + 250,
-      );
+      assert.equal((await api("/credit-requests", members[0].token, { amount: 250 })).status, 404);
+      assert.equal((await api("/credit-requests/1", l, { approve: true }, "PATCH")).status, 404);
+      assert.equal((await api("/state", l)).data.requests, undefined);
+      assert.equal((await q("SELECT COUNT(*) AS n FROM credit_ledger WHERE member_id=?", [member1]))[0].n, 0);
+      const savedSettings = (await api("/state", l)).data.settings.find((s) => s.lottery_id === lottery).config;
+      assert.equal(savedSettings.discount, undefined);
+      assert.equal(savedSettings.discounts, undefined);
       await api("/draw-settings/" + draw, l, {
         closeAt: new Date(Date.now() - 1000).toISOString(),
         blocked: [],
