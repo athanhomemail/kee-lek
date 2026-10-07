@@ -8,4 +8,5 @@ import "@fontsource/mali/700.css";
 import "@fontsource-variable/manrope";
 import "./style.css";
 import "./theme.css";
+import "./dark.css";
 createRoot(document.getElementById("root")).render(<App />);

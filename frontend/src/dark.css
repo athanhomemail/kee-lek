@@ -1,0 +1,433 @@
+/* Shared palette covers every page and component, including dialogs. */
+:root {
+  color-scheme: light;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --palette-border-2563eb: #324162;
+  --palette-border-b94358: #62323b;
+  --palette-border-d8dee8: #37455d;
+  --palette-border-d9dce2: #404754;
+  --palette-border-df9258: #624732;
+  --palette-border-e0c9b4: #624932;
+  --palette-border-e5d6c6: #624b32;
+  --palette-border-e7e1da: #5a4b3a;
+  --palette-border-e8bd96: #624932;
+  --palette-border-e8e0d7: #5e4b36;
+  --palette-border-e9995c: #624732;
+  --palette-border-e9b782: #624b32;
+  --palette-border-e9bd4e: #625432;
+  --palette-border-e9dfd9: #5e4536;
+  --palette-border-e9e2ee: #4d375d;
+  --palette-border-ead8c7: #624932;
+  --palette-border-eadccc: #624c32;
+  --palette-border-eadde4: #5b384b;
+  --palette-border-eaded2: #624a32;
+  --palette-border-eadfd1: #624d32;
+  --palette-border-eae0df: #593d3b;
+  --palette-border-eae2da: #5e4a36;
+  --palette-border-eae5ee80: #4c3a5980;
+  --palette-border-eae7ef: #463b59;
+  --palette-border-ecc3c9: #623239;
+  --palette-border-ecd4ba: #624b32;
+  --palette-border-ecd5bc: #624b32;
+  --palette-border-eda970: #624832;
+  --palette-border-edc56f: #625332;
+  --palette-border-eead78: #624832;
+  --palette-border-eed7b7: #624e32;
+  --palette-border-eee2d6: #624a32;
+  --palette-border-eee7df: #614b33;
+  --palette-border-eee8f0: #523a5a;
+  --palette-border-eeebf2: #483a5a;
+  --palette-border-eeeeee: #4a4a4a;
+  --palette-border-ef92a1: #62323a;
+  --palette-border-efc4c9: #623238;
+  --palette-border-efdfd3: #624732;
+  --palette-border-efeaf4: #4a3361;
+  --palette-border-f0bb76: #624d32;
+  --palette-border-f0e6db: #624b32;
+  --palette-border-f0e7db: #624d32;
+  --palette-border-f0eaf3: #51365e;
+  --palette-border-f0ecf3: #4c395b;
+  --palette-border-f1e8dc: #624d32;
+  --palette-border-f1ebe4: #614c33;
+  --palette-border-f1ebe5: #604a34;
+  --palette-border-f2aaaa: #623232;
+  --palette-border-f2c9b0: #624432;
+  --palette-border-f3a0af: #62323b;
+  --palette-border-f4a77f: #624232;
+  --palette-border-f4cdbb: #624132;
+  --palette-border-f4d9c3: #624832;
+  --palette-border-f4e0d2: #624632;
+  --palette-border-f5dfcc: #624832;
+  --palette-border-f5e6d8: #624932;
+  --palette-border-f6ddc6: #624932;
+  --palette-border-f8dfcc: #624732;
+  --palette-border-ffdfc6: #624732;
+  --palette-border-ffdfcb: #624432;
+  --palette-border-ffffff: #4a4a4a;
+  --palette-border-ffffff99: #4a4a4a99;
+  --palette-border-ffffffc9: #4a4a4ac9;
+  --palette-border-ffffffd9: #4a4a4ad9;
+  --palette-surface-000000: #000000;
+  --palette-surface-1e122733: #1e122733;
+  --palette-surface-27213750: #27213750;
+  --palette-surface-35204408: #35204408;
+  --palette-surface-3520440c: #3520440c;
+  --palette-surface-3824460c: #4530540c;
+  --palette-surface-39274b04: #42315404;
+  --palette-surface-3c302b55: #4c3e3955;
+  --palette-surface-40304f0d: #4335500d;
+  --palette-surface-56402a03: #56422f03;
+  --palette-surface-79482e12: #5c3b2912;
+  --palette-surface-9a6b3505: #72532f05;
+  --palette-surface-9a6b3520: #72532f20;
+  --palette-surface-a83147: #7c2d3c;
+  --palette-surface-b0816820: #8a645020;
+  --palette-surface-b897761e: #9676561e;
+  --palette-surface-b94358: #893b49;
+  --palette-surface-b9753c12: #895c3612;
+  --palette-surface-bc8144: #8c653c;
+  --palette-surface-bf8b6a0c: #9b6b4d0c;
+  --palette-surface-c78d4c25: #9b6e3c25;
+  --palette-surface-c88e4e: #9d6f3c;
+  --palette-surface-cb92630d: #a871440d;
+  --palette-surface-cd824b: #a26539;
+  --palette-surface-cf8b54: #a86c3b;
+  --palette-surface-d6976720: #b8733f20;
+  --palette-surface-db945c: #bb7237;
+  --palette-surface-db985f: #bc7539;
+  --palette-surface-dbae863d: #c086543d;
+  --palette-surface-dbe4ff: #1b2133;
+  --palette-surface-dcb9a226: #46322626;
+  --palette-surface-df9258: #bf6f33;
+  --palette-surface-e3e5e9: #24282e;
+  --palette-surface-e4ab77: #cb8443;
+  --palette-surface-e5a45125: #c5822d25;
+  --palette-surface-e6b48b0b: #4836270b;
+  --palette-surface-e6b49725: #46322625;
+  --palette-surface-e8aa6510: #d1863310;
+  --palette-surface-e96537: #bd4b24;
+  --palette-surface-e9f6e5: #21321b;
+  --palette-surface-eaa46c: #d37d38;
+  --palette-surface-eadffc: #241b32;
+  --palette-surface-eaf7f1: #1a3127;
+  --palette-surface-ec6637: #c14b22;
+  --palette-surface-ed7040: #c85123;
+  --palette-surface-ed7645: #cb5524;
+  --palette-surface-ed7b4b55: #ce572555;
+  --palette-surface-ed804b: #ce5c25;
+  --palette-surface-ed874c40: #cf632540;
+  --palette-surface-ed875428: #d3602728;
+  --palette-surface-eda970: #d7813a;
+  --palette-surface-edf5e6: #26321b;
+  --palette-surface-ee905d33: #d8672a33;
+  --palette-surface-eead78: #4b3828;
+  --palette-surface-eef2ff: #191e2f;
+  --palette-surface-eef8e8: #23311b;
+  --palette-surface-ef713e: #ca5221;
+  --palette-surface-efe4f8: #281b32;
+  --palette-surface-f06c3d: #cb4d20;
+  --palette-surface-f0f1f3: #21242a;
+  --palette-surface-f0f6ec: #23311a;
+  --palette-surface-f17445: #d15121;
+  --palette-surface-f17748: #d35321;
+  --palette-surface-f1794433: #d1562033;
+  --palette-surface-f17a49: #d45521;
+  --palette-surface-f18047: #d25c21;
+  --palette-surface-f1804717: #d25c2117;
+  --palette-surface-f1845040: #d85d2340;
+  --palette-surface-f1845050: #d85d2350;
+  --palette-surface-f27d4530: #d35a2030;
+  --palette-surface-f2edfc: #211a2f;
+  --palette-surface-f4774529: #d6531e29;
+  --palette-surface-f4774540: #d6531e40;
+  --palette-surface-f48b5c30: #df602730;
+  --palette-surface-f4c998: #433424;
+  --palette-surface-f4e9ff55: #251a3055;
+  --palette-surface-f58450: #df5b1f;
+  --palette-surface-f6dfc3: #392d1f;
+  --palette-surface-f6f4f8: #241c2c;
+  --palette-surface-f7ebd6: #352c1d;
+  --palette-surface-f7f4fa: #24192e;
+  --palette-surface-f8e5cf: #372b1d;
+  --palette-surface-f8f7fb: #1e192e;
+  --palette-surface-f9b891: #433024;
+  --palette-surface-f9d4af: #3d2f21;
+  --palette-surface-f9e2c8: #382c1e;
+  --palette-surface-f9e5d2: #36291d;
+  --palette-surface-f9f6fd: #21182d;
+  --palette-surface-faf3e9: #31271a;
+  --palette-surface-faf3ef: #2f221a;
+  --palette-surface-faf7f2: #2f2719;
+  --palette-surface-faf8f5: #2e2619;
+  --palette-surface-faf8fc: #23182d;
+  --palette-surface-fbf7f1: #2f2619;
+  --palette-surface-fbf8f5: #2e2319;
+  --palette-surface-fce3d9: #34231c;
+  --palette-surface-fcf7ef: #2f2719;
+  --palette-surface-fcf9f4: #2e2619;
+  --palette-surface-fcfbfd: #22182c;
+  --palette-surface-ff8750: #ec5b19;
+  --palette-surface-ff8c55: #ed601d;
+  --palette-surface-ff9159: #ed651f;
+  --palette-surface-ff9459: #ed681f;
+  --palette-surface-ff9665: #ee6728;
+  --palette-surface-ff9d59: #ed741f;
+  --palette-surface-ff9d62: #ed7126;
+  --palette-surface-ff9f61: #ed7425;
+  --palette-surface-ff9f6c: #4a3328;
+  --palette-surface-ffb077: #473426;
+  --palette-surface-ffbd86: #443325;
+  --palette-surface-ffd7b3: #3b2d20;
+  --palette-surface-ffdce2: #321b1f;
+  --palette-surface-ffdfc8: #37281d;
+  --palette-surface-ffe0c0: #382b1e;
+  --palette-surface-ffe0e5: #321b1e;
+  --palette-surface-ffe2c4: #372b1e;
+  --palette-surface-ffe4e8: #311a1e;
+  --palette-surface-ffe5e9: #311a1e;
+  --palette-surface-ffe9a9: #3d3621;
+  --palette-surface-ffead8: #33261c;
+  --palette-surface-ffead933: #33261b33;
+  --palette-surface-ffeadb: #33251b;
+  --palette-surface-ffeadc: #32241b;
+  --palette-surface-ffede4: #31221a;
+  --palette-surface-fff0bd: #39331f;
+  --palette-surface-fff0db: #33291b;
+  --palette-surface-fff0df: #32271b;
+  --palette-surface-fff0e4: #31241a;
+  --palette-surface-fff0e5: #31241a;
+  --palette-surface-fff0e6: #30231a;
+  --palette-surface-fff0ed: #2f1d19;
+  --palette-surface-fff0f0: #2e1919;
+  --palette-surface-fff1e5: #31241a;
+  --palette-surface-fff1e7: #30231a;
+  --palette-surface-fff1e9: #30221a;
+  --palette-surface-fff2e1: #31271b;
+  --palette-surface-fff2e2: #31271a;
+  --palette-surface-fff2e9: #30231a;
+  --palette-surface-fff3d6: #342d1c;
+  --palette-surface-fff3e5: #31261a;
+  --palette-surface-fff3e7: #30251a;
+  --palette-surface-fff3e8: #30241a;
+  --palette-surface-fff3f5: #2e191c;
+  --palette-surface-fff4d6: #342d1c;
+  --palette-surface-fff4e6: #30261a;
+  --palette-surface-fff4eb: #2f2319;
+  --palette-surface-fff4ef: #2e2019;
+  --palette-surface-fff4f4: #2d1818;
+  --palette-surface-fff5e9: #30261a;
+  --palette-surface-fff5ed: #2f2319;
+  --palette-surface-fff6eb: #2f2519;
+  --palette-surface-fff7f0: #2e2319;
+  --palette-surface-fff7f2: #2e2119;
+  --palette-surface-fff8ec: #2f2719;
+  --palette-surface-fff8ef: #2e2519;
+  --palette-surface-fff8f1: #2e2319;
+  --palette-surface-fff8f2: #2e2219;
+  --palette-surface-fff9f1: #2e2519;
+  --palette-surface-fffaf4: #2d2418;
+  --palette-surface-fffbef: #2e2919;
+  --palette-surface-fffcf8: #2d2418;
+  --palette-surface-fffdfa: #2c2418;
+  --palette-surface-fffefc: #2c2518;
+  --palette-surface-ffffff: #212121;
+  --palette-surface-ffffff17: #21212117;
+  --palette-surface-ffffff1a: #2121211a;
+  --palette-surface-ffffff6b: #2121216b;
+  --palette-surface-ffffff90: #21212190;
+  --palette-surface-ffffffb3: #212121b3;
+  --palette-surface-ffffffd9: #212121d9;
+  --palette-surface-ffffffec: #212121ec;
+  --palette-surface-ffffffed: #212121ed;
+  --palette-text-292634: #bcb8cb;
+  --palette-text-332c36: #c4bcc8;
+  --palette-text-334155: #b2bfd1;
+  --palette-text-382b20: #d2c0b1;
+  --palette-text-44372c: #cfc1b5;
+  --palette-text-453c34: #cac1b9;
+  --palette-text-4c7e3c: #b7d8ac;
+  --palette-text-507c3c: #bad7ad;
+  --palette-text-563c37: #cfb9b4;
+  --palette-text-5b4939: #d0c1b4;
+  --palette-text-604e3a: #d1c3b3;
+  --palette-text-625d6c: #c0bdc6;
+  --palette-text-6b835e: #bfccb8;
+  --palette-text-756555: #cbc2b8;
+  --palette-text-759267: #beccb7;
+  --palette-text-766454: #ccc1b7;
+  --palette-text-7d7589: #c1bdc7;
+  --palette-text-806c57: #cdc2b6;
+  --palette-text-858994: #bec0c6;
+  --palette-text-875408: #eeca96;
+  --palette-text-87768b: #c5bdc7;
+  --palette-text-8a560c: #eec996;
+  --palette-text-8d7c6c: #cac2ba;
+  --palette-text-918999: #c2bdc6;
+  --palette-text-927764: #cdc0b6;
+  --palette-text-935434: #dfb8a5;
+  --palette-text-978678: #cac1ba;
+  --palette-text-995220: #eabb9a;
+  --palette-text-995d32: #e1bda3;
+  --palette-text-99909f: #c3bdc6;
+  --palette-text-9a7c65: #cfc0b5;
+  --palette-text-9b8a79: #cbc2b9;
+  --palette-text-9b94a5: #c1bdc7;
+  --palette-text-9e653e: #ddbda7;
+  --palette-text-a09ca9: #c0bdc6;
+  --palette-text-a18465: #d1c2b3;
+  --palette-text-a18f80: #cbc1b9;
+  --palette-text-a295aa: #c3bbc9;
+  --palette-text-a38f7b: #cdc2b7;
+  --palette-text-a393a7: #c6bcc8;
+  --palette-text-a54857: #daaab2;
+  --palette-text-a76d3b: #dfc0a5;
+  --palette-text-a87547: #dbc1a9;
+  --palette-text-a89785: #ccc2b8;
+  --palette-text-a98b7c: #cebeb5;
+  --palette-text-aa9783: #cdc2b6;
+  --palette-text-aba2b2: #c3bcc8;
+  --palette-text-ac8a72: #d2bfb2;
+  --palette-text-aca1b3: #c3bbc8;
+  --palette-text-ad7949: #dbc1a9;
+  --palette-text-ae2639: #e99ba6;
+  --palette-text-ae8b69: #d4c2b0;
+  --palette-text-ae8e91: #ccb8ba;
+  --palette-text-af9c89: #cec2b6;
+  --palette-text-b0917d: #d1bfb3;
+  --palette-text-b1253d: #ea9aa7;
+  --palette-text-b19b86: #cfc1b5;
+  --palette-text-b2203b: #ec97a7;
+  --palette-text-b27954: #d9bdab;
+  --palette-text-b28b7c: #d2bbb2;
+  --palette-text-b29a81: #d1c2b3;
+  --palette-text-b2a18f: #cdc2b6;
+  --palette-text-b2aaba: #c2bbc8;
+  --palette-text-b38150: #dac2aa;
+  --palette-text-b39a91: #cdbdb7;
+  --palette-text-b3a08d: #cec2b6;
+  --palette-text-b4845b: #d9c0ab;
+  --palette-text-b66721: #ecbf97;
+  --palette-text-b6987a: #d4c2b0;
+  --palette-text-b6a2ac: #c9bac2;
+  --palette-text-b77d44: #dec2a6;
+  --palette-text-b78046: #ddc3a6;
+  --palette-text-b78143: #dec4a5;
+  --palette-text-b7854f: #dbc3a8;
+  --palette-text-b79e93: #cebdb6;
+  --palette-text-b87b4d: #dcbea8;
+  --palette-text-b89a89: #d1beb3;
+  --palette-text-b9aabd: #c6baca;
+  --palette-text-b9afc3: #c2b9cb;
+  --palette-text-bb6464: #daaaaa;
+  --palette-text-bd7955: #ddbaa7;
+  --palette-text-bd7c45: #dfbfa5;
+  --palette-text-bd8049: #dec0a5;
+  --palette-text-bdac9b: #cec2b5;
+  --palette-text-be9b87: #d4bdb0;
+  --palette-text-c08365: #dbb9a8;
+  --palette-text-c0864d: #dfc2a5;
+  --palette-text-c18452: #dfbfa5;
+  --palette-text-c3793e: #e2bea2;
+  --palette-text-c65c50: #e1a9a3;
+  --palette-text-c7b6a4: #d0c2b3;
+  --palette-text-ca8155: #e2baa2;
+  --palette-text-cc7850: #e3b6a0;
+  --palette-text-d37c44: #e8ba9c;
+  --palette-text-d48051: #e7b79d;
+  --palette-text-d87a48: #e9b69a;
+  --palette-text-d89461: #e7bd9d;
+  --palette-text-dca16f: #e7bf9d;
+  --palette-text-dcab85: #e4bea0;
+  --palette-text-dda065: #e9c19b;
+  --palette-text-dea578: #e7bd9d;
+  --palette-text-df8152: #ecb498;
+  --palette-text-e2814f: #eeb496;
+  --palette-text-e79260: #eeb696;
+  --palette-text-e7b566: #eecc96;
+  --palette-text-ed8750: #eeb596;
+  --palette-text-ee9359: #eeb896;
+  --palette-text-f47945: #eeb096;
+  --palette-text-ffffff: #ffffff;
+  --surface: #24212a;
+  --border: #49414b;
+  --primary: #ff9b6d;
+}
+.theme-toggle {
+  white-space: nowrap;
+}
+.topbar > .header-right > button.theme-toggle {
+  width: auto;
+  height: 38px;
+  padding: 8px 12px;
+  color: var(--ink);
+  gap: 6px;
+}
+.login > .theme-toggle {
+  position: absolute;
+  top: 20px;
+  right: 20px;
+  z-index: 2;
+}
+@media (max-width: 768px) {
+  .topbar > .header-right > button.theme-toggle {
+    width: 32px;
+    padding: 6px;
+  }
+  .topbar .theme-toggle span {
+    display: none;
+  }
+}
+
+/* Stronger interaction contrast, with neutral fields and warm number chips. */
+:root[data-theme="dark"] {
+  --surface: #242424;
+  --border: #56504b;
+  --field-text: #f5eee8;
+}
+:root[data-theme="dark"] input:not([type="checkbox"]):not([type="radio"]),
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea {
+  background: var(--surface);
+  color: var(--field-text);
+  border-color: var(--border);
+}
+:root[data-theme="dark"] input::placeholder,
+:root[data-theme="dark"] textarea::placeholder {
+  color: #aaa29c;
+  opacity: 1;
+}
+:root[data-theme="dark"] .number-entry-field input {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+:root[data-theme="dark"] .tabs {
+  background: #191919;
+  border-color: #45403b;
+}
+:root[data-theme="dark"] .tabs button {
+  color: #c8c0b9;
+}
+:root[data-theme="dark"] .tabs button:hover:not(.active) {
+  background: #34302c;
+  color: #fff4e8;
+}
+:root[data-theme="dark"] .tabs button.active {
+  background: #ffad73;
+  color: #321b0e;
+  box-shadow:
+    0 2px 8px #00000040,
+    inset 0 0 0 1px #ffcba6;
+}
+:root[data-theme="dark"] .number-entry-badge {
+  background: #f5c399;
+  color: #382010;
+  box-shadow: inset 0 0 0 1px #ffdcbc;
+  font-weight: 700;
+}
+:root[data-theme="dark"] .number-entry-badge button:hover {
+  background: #e4a574;
+  color: #291507;
+}

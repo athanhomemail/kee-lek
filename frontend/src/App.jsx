@@ -7,6 +7,8 @@ import MaintenancePanel from "./MaintenancePanel.jsx";
 import LotteryFlag from "./LotteryFlag.jsx";
 import { laoReceiptDate } from "./receipt.js";
 import {
+  Sun,
+  Moon,
   Sparkles,
   LayoutDashboard,
   Settings,
@@ -84,6 +86,34 @@ const currencyOf = (b) => b.currency || b.items?.[0]?.currency || "THB";
 const unit = (c) => (c === "LAK" ? "K กีบ" : "บาท");
 const amountText = (n, c) => `${money(n)} ${unit(c)}`;
 export default function App() {
+  const [theme, setTheme] = useState(
+    document.documentElement.dataset.theme || "light",
+  );
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    try {
+      localStorage.setItem("keelek-theme", theme);
+    } catch {
+      /* Storage may be unavailable. */
+    }
+  }, [theme]);
+  const themeToggle = (
+    <button
+      type="button"
+      className="theme-toggle"
+      onClick={() => setTheme(theme === "light" ? "dark" : "light")}
+      aria-label={
+        theme === "light" ? "เปลี่ยนเป็นโหมด Dark" : "เปลี่ยนเป็นโหมด Light"
+      }
+      title={
+        theme === "light" ? "เปลี่ยนเป็นโหมด Dark" : "เปลี่ยนเป็นโหมด Light"
+      }
+      aria-pressed={theme === "dark"}
+    >
+      {theme === "light" ? <Moon size={18} /> : <Sun size={18} />}
+      <span>{theme === "light" ? "Dark" : "Light"}</span>
+    </button>
+  );
   const [token, setToken] = useState(sessionStorage.getItem("token") || ""),
     [state, setState] = useState(null),
     [page, setPage] = useState("ผล"),
@@ -467,7 +497,7 @@ export default function App() {
         );
         await document.fonts.ready;
         const canvas = await html2canvas(receipt.current, {
-          backgroundColor: "#fff",
+          backgroundColor: getComputedStyle(receipt.current).backgroundColor,
           scale: 2,
         });
         const blob = await new Promise((resolve) =>
@@ -515,6 +545,7 @@ export default function App() {
   if (!token)
     return (
       <div className="login">
+        {themeToggle}
         <div className="login-decoration" aria-hidden="true">
           <span>32</span>
           <span>123</span>
@@ -629,6 +660,7 @@ export default function App() {
           })}
         </nav>
         <div className="header-right">
+          {themeToggle}
           {u.role !== "Admin" && state.accessExpiresAt && (
             <span className="access-remaining">
               เหลือ {accessTime(state.accessExpiresAt, tick).days} วัน
@@ -833,7 +865,10 @@ export default function App() {
                         <LotteryFlag flag={draw.flag} /> {draw.name}{" "}
                         <small>{date(draw.draw_date)}</small>
                       </h2>
-                      <div className="key-countdown" aria-label="เวลาที่เหลือก่อนปิดรับ">
+                      <div
+                        className="key-countdown"
+                        aria-label="เวลาที่เหลือก่อนปิดรับ"
+                      >
                         <strong>{countdown(draw)}</strong>
                       </div>
                       <button
