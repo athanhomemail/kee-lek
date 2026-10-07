@@ -1928,21 +1928,15 @@ footer {
 }
 .key-countdown {
   text-align: center;
-  padding: 10px 24px;
+  padding: 6px 14px;
   border: 1px solid #f0bb76;
-  border-radius: 16px;
+  border-radius: 12px;
   background: linear-gradient(135deg, #fff3d6, #ffe2c4);
   box-shadow: 0 5px 20px #e5a45125;
 }
-.key-countdown small {
-  display: block;
-  margin: 0 0 3px;
-  font-size: 11px;
-  color: #a56b2e;
-}
 .key-countdown strong {
   font-family: "Manrope Variable", "Mali", sans-serif;
-  font-size: 26px;
+  font-size: 18px;
   font-weight: 800;
   color: #b66721;
   font-variant-numeric: tabular-nums;
@@ -2023,10 +2017,10 @@ footer {
     grid-column: 1 / -1;
     grid-row: 2;
     justify-self: center;
-    width: 100%;
+    width: auto;
   }
   .key-countdown strong {
-    font-size: 28px;
+    font-size: 18px;
   }
   .access-remaining {
     font-size: 10px;
@@ -2675,19 +2669,134 @@ footer {
   border-radius: 14px;
   padding: 16px;
 }
-.rate-explanation h3 { margin: 0 0 8px; }
-.rate-explanation p { margin: 6px 0 0; line-height: 1.7; }
-.rate-group { min-width: 0; margin: 0; padding: 16px; border: 1px solid #e9e2ee; border-radius: 16px; }
-.rate-group legend { padding: 0 8px; font-weight: 700; }
-.rate-type-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
-.rate-type-card { min-width: 0; background: #faf8fc; border-radius: 12px; padding: 16px; }
-.rate-type-card h4 { margin: 0 0 16px; font-size: 1rem; }
-.rate-type-card label { display: grid; gap: 8px; margin: 0 0 14px; }
-.rate-type-card label:last-child { margin-bottom: 0; }
-.rate-type-card input { width: 100%; min-width: 0; background: white; }
-.leader-rates-form .rate-save { justify-self: start; }
+.rate-explanation h3 {
+  margin: 0 0 8px;
+}
+.rate-explanation p {
+  margin: 6px 0 0;
+  line-height: 1.7;
+}
+.rate-group {
+  min-width: 0;
+  margin: 0;
+  padding: 16px;
+  border: 1px solid #e9e2ee;
+  border-radius: 16px;
+}
+.rate-group legend {
+  padding: 0 8px;
+  font-weight: 700;
+}
+.rate-type-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.rate-type-card {
+  min-width: 0;
+  background: #faf8fc;
+  border-radius: 12px;
+  padding: 16px;
+}
+.rate-type-card h4 {
+  margin: 0 0 16px;
+  font-size: 1rem;
+}
+.rate-type-card label {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 14px;
+}
+.rate-type-card label:last-child {
+  margin-bottom: 0;
+}
+.rate-type-card input {
+  width: 100%;
+  min-width: 0;
+  background: white;
+}
+.leader-rates-form .rate-save {
+  justify-self: start;
+}
 @media (max-width: 600px) {
-  .rate-type-grid { grid-template-columns: minmax(0, 1fr); }
-  .rate-group { padding: 12px; }
-  .leader-rates-form .rate-save { width: 100%; }
+  .rate-type-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .rate-group {
+    padding: 12px;
+  }
+  .leader-rates-form .rate-save {
+    width: 100%;
+  }
+}
+
+.customer-receipt[lang="lo"] {
+  font-family: "Lao Sangam MN", "Noto Sans Lao", "Phetsarath OT", sans-serif;
+}
+
+.keying-tools {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+}
+.keying-tools > button:first-child {
+  justify-self: start;
+}
+.keying-tools > button:last-child:not(:first-child) {
+  grid-column: 3;
+  justify-self: end;
+}
+.keying-tools .currency-switch {
+  grid-column: 2;
+  margin: 0;
+  flex-wrap: nowrap;
+}
+.keying-tools .currency-switch button {
+  padding: 8px 10px;
+  font-size: 11px;
+}
+@media (max-width: 480px) {
+  .keying-tools {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+  .keying-tools .currency-switch {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    justify-self: center;
+  }
+  .keying-tools > button:last-child:not(:first-child) {
+    grid-column: 2;
+  }
+}
+
+.report-amounts {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.metrics .report-amounts {
+  font-size: 22px;
+}
+.number-ranking {
+  margin-bottom: 20px;
+}
+.report-table-scroll {
+  overflow-x: auto;
+}
+.report-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.report-table th,
+.report-table td {
+  padding: 12px;
+  border-bottom: 1px solid #efeaf4;
+  text-align: left;
+  white-space: nowrap;
+}
+.report-table th {
+  color: #99909f;
+  font-size: 12px;
+}
+.report-table td strong {
+  font-size: 18px;
 }

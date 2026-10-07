@@ -9,7 +9,14 @@ import { Server } from "socket.io";
 import { db } from "./db.js";
 import { cleanup, cleanupModes } from "./maintenance.js";
 import { notify } from "./notifications.js";
-import { defaults, price, winnings } from "./rules.js";
+import {
+  defaults,
+  price,
+  winnings,
+  billCurrency,
+  currencyConfig,
+  checkLimits,
+} from "./rules.js";
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)
   throw Error("Set JWT_SECRET to at least 32 characters");
 const app = express(),
@@ -198,14 +205,19 @@ app.get(
       users: users.map(clean),
       bills: bills.map((b) => ({
         ...b,
+        currency: billCurrency(b),
         items: b.items.map(({ discount, ...item }) => item),
         win: winnings(b, draws.find((d) => d.id === b.draw_id) || {}),
       })),
       settings: settings.map((s) => ({ ...s, config: cleanConfig(s.config) })),
-      drawSettings: drawSettings.map((s) => ({ ...s, config: cleanConfig(s.config) })),
+      drawSettings: drawSettings.map((s) => ({
+        ...s,
+        config: cleanConfig(s.config),
+      })),
       notifications,
       usage: teamBills.map((b) => ({
         draw_id: b.draw_id,
+        currency: billCurrency(b),
         items: b.items.map((i) => ({
           number: i.number,
           type: i.type,
@@ -368,6 +380,15 @@ app.post(
       Object.keys(defaults.rates).some(
         (k) => !Number.isFinite(Number(c.rates?.[k])) || Number(c.rates[k]) < 0,
       ) ||
+      (c.lak &&
+        (Object.keys(defaults.rates).some(
+          (k) => !Number.isFinite(c.lak.rates?.[k]) || c.lak.rates[k] < 0,
+        ) ||
+          Object.keys(defaults.rates).some(
+            (k) => !Number.isFinite(c.lak.limits?.[k]) || c.lak.limits[k] <= 0,
+          ) ||
+          !Number.isFinite(c.lak.limit) ||
+          c.lak.limit <= 0)) ||
       Object.values(c.limits || {}).some(
         (n) => !Number.isFinite(Number(n)) || Number(n) <= 0,
       )
@@ -536,7 +557,11 @@ app.post(
         c,
       );
       if (!setting) throw Error("หัวหน้ายังไม่ได้กำหนดอัตราจ่าย");
-      const config = { ...setting.config, ...drawSetting?.config };
+      const currency = req.body.currency || "THB";
+      if (previous && billCurrency(previous) !== currency)
+        throw Error("ไม่สามารถเปลี่ยนสกุลเงินของบิลเดิม");
+      const merged = { ...setting.config, ...drawSetting?.config };
+      const config = currencyConfig(merged, currency);
       if (
         !drawSetting?.config?.closeAt ||
         Date.now() >=
@@ -546,19 +571,13 @@ app.post(
           )
       )
         throw Error("ปิดรับแล้วหรือยังไม่ได้ตั้งค่าปิดรับ");
-      const bill = price(req.body.items, config);
+      const bill = price(req.body.items, merged, currency);
       const existing = await query(
         "SELECT items FROM bills WHERE leader_id=? AND draw_id=? AND status='active' AND id<>?",
         [leader.id, draw.id, previous?.id || 0],
         c,
       );
-      const totals = {};
-      for (const i of [...existing.flatMap((b) => b.items), ...bill.items]) {
-        const key = i.type + ":" + i.number;
-        totals[key] = (totals[key] || 0) + i.amount;
-        if (totals[key] > Number(config.limits?.[i.type] ?? config.limit))
-          throw Error("เลข " + i.number + " เกินวงเงินรับซื้อ");
-      }
+      checkLimits(existing, bill.items, config, currency);
       let r;
       if (previous) {
         await query(
@@ -589,7 +608,12 @@ app.post(
         );
       await notify(
         leader.id,
-        member.name + " ส่งโพย #" + r.insertId + " ยอด " + bill.gross + " บาท",
+        member.name +
+          " ส่งโพย #" +
+          r.insertId +
+          " ยอด " +
+          bill.gross +
+          (currency === "LAK" ? " K กีบ" : " บาท"),
         c,
       );
       await c.commit();

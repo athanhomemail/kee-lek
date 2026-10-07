@@ -2,8 +2,10 @@ import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
 import html2canvas from "html2canvas";
+import Statistics from "./Statistics.jsx";
 import MaintenancePanel from "./MaintenancePanel.jsx";
 import LotteryFlag from "./LotteryFlag.jsx";
+import { laoReceiptDate } from "./receipt.js";
 import {
   Sparkles,
   LayoutDashboard,
@@ -78,6 +80,9 @@ function Form({ fields, onSubmit, submit = "บันทึก", className }) {
     </form>
   );
 }
+const currencyOf = (b) => b.currency || b.items?.[0]?.currency || "THB";
+const unit = (c) => (c === "LAK" ? "K กีบ" : "บาท");
+const amountText = (n, c) => `${money(n)} ${unit(c)}`;
 export default function App() {
   const [token, setToken] = useState(sessionStorage.getItem("token") || ""),
     [state, setState] = useState(null),
@@ -85,6 +90,7 @@ export default function App() {
     [modal, setModal] = useState(null),
     [busy, setBusy] = useState(false),
     [drawId, setDrawId] = useState(""),
+    [currency, setCurrency] = useState("THB"),
     [mode, setMode] = useState("2 ตัว"),
     [text, setText] = useState(""),
     [top, setTop] = useState(""),
@@ -216,6 +222,7 @@ export default function App() {
     setMemberFilter("");
     setItems([]);
     setDrawId("");
+    setCurrency("THB");
     setEditId(null);
     sessionStorage.removeItem("token");
     setToken("");
@@ -226,12 +233,18 @@ export default function App() {
     base = state?.settings?.find(
       (s) => s.lottery_id === draw?.lottery_id,
     )?.config,
-    config = base
+    mergedConfig = base
       ? {
           ...base,
           ...state?.drawSettings?.find((s) => s.draw_id === draw?.id)?.config,
         }
       : null;
+  const config =
+    currency === "LAK"
+      ? mergedConfig?.lak
+        ? { ...mergedConfig, ...mergedConfig.lak }
+        : null
+      : mergedConfig;
   const countdown = (d) => {
     const c = state.drawSettings?.find((s) => s.draw_id === d.id)?.config;
     const remaining =
@@ -326,7 +339,7 @@ export default function App() {
   const available = (i) =>
     Number(config?.limits?.[i.type] ?? config?.limit ?? 0) -
     (state.usage || [])
-      .filter((b) => b.draw_id === draw?.id)
+      .filter((b) => b.draw_id === draw?.id && currencyOf(b) === currency)
       .flatMap((b) => b.items)
       .filter((x) => x.type === i.type && x.number === i.number)
       .reduce((s, x) => s + x.amount, 0) +
@@ -356,7 +369,8 @@ export default function App() {
       preview = makeItems(previewNumbers, mode, 1, 1, digits);
     }
   } catch {}
-  const previewEntries = draftRows(preview).map((row, index) => ({ ...row, inputIndex: index }))
+  const previewEntries = draftRows(preview)
+    .map((row, index) => ({ ...row, inputIndex: index }))
     .filter((row) => !excludedNumbers.includes(row.inputIndex));
   const previewIds = new Set(previewEntries.map((row) => row.entryId));
   preview = preview.filter((item) => previewIds.has(item.entryId));
@@ -383,6 +397,10 @@ export default function App() {
     );
   const add = () => {
     try {
+      if (!config)
+        throw Error(
+          "หัวหน้ายังไม่ได้ตั้งค่าอัตราจ่ายและวงเงินสำหรับสกุลเงินนี้",
+        );
       const nums = numbers(
           text,
           inputMode,
@@ -424,9 +442,15 @@ export default function App() {
     if (!event.repeat) add();
   };
   const editBill = (b) => {
+    setCurrency(currencyOf(b));
     setDrawId(String(b.draw_id));
     setItems(
-      b.items.map(({ entryId, number, type, amount }) => ({ entryId, number, type, amount })),
+      b.items.map(({ entryId, number, type, amount }) => ({
+        entryId,
+        number,
+        type,
+        amount,
+      })),
     );
     setNote(b.note || "");
     setEditId(b.id);
@@ -441,6 +465,7 @@ export default function App() {
         await new Promise((resolve) =>
           requestAnimationFrame(() => requestAnimationFrame(resolve)),
         );
+        await document.fonts.ready;
         const canvas = await html2canvas(receipt.current, {
           backgroundColor: "#fff",
           scale: 2,
@@ -755,6 +780,7 @@ export default function App() {
                                   disabled={unavailable}
                                   onClick={() => {
                                     setDrawId(String(d.id));
+                                    setCurrency("THB");
                                     setMode("2 ตัว");
                                     setText("");
                                     setTop("");
@@ -807,14 +833,14 @@ export default function App() {
                         <LotteryFlag flag={draw.flag} /> {draw.name}{" "}
                         <small>{date(draw.draw_date)}</small>
                       </h2>
-                      <div className="key-countdown">
-                        <small>เวลาที่เหลือก่อนปิดรับ</small>
+                      <div className="key-countdown" aria-label="เวลาที่เหลือก่อนปิดรับ">
                         <strong>{countdown(draw)}</strong>
                       </div>
                       <button
                         className="change-lottery"
                         onClick={() => {
                           setDrawId("");
+                          setCurrency("THB");
                           setItems([]);
                           setEditId(null);
                         }}
@@ -822,6 +848,11 @@ export default function App() {
                         ← เลือกหวยอื่น
                       </button>
                     </div>
+                    {currency === "LAK" && !config && (
+                      <p role="alert">
+                        หัวหน้ายังไม่ได้ตั้งค่าอัตราจ่ายและวงเงินกีบ
+                      </p>
+                    )}
                     <div className="key-grid">
                       <section className="panel">
                         <div className="tabs">
@@ -932,7 +963,9 @@ export default function App() {
                               >
                                 0
                               </button>
-                              <span className="muted small">กลับเลขด้วย Spacebar ในช่องเลข</span>
+                              <span className="muted small">
+                                กลับเลขด้วย Spacebar ในช่องเลข
+                              </span>
                             </div>
                             <button
                               className="primary full"
@@ -973,9 +1006,27 @@ export default function App() {
                           >
                             <Trash2 size={16} /> ล้างเลขทั้งหมด
                           </button>
-                          {inputSize > 1 && (
-                            <span className="muted small">Spacebar: เพิ่ม / เอาเลขกลับออก</span>
-                          )}
+                          <div
+                            className="tabs currency-switch"
+                            aria-label="สกุลเงินของบิล"
+                          >
+                            {["THB", "LAK"].map((c) => (
+                              <button
+                                type="button"
+                                aria-pressed={currency === c}
+                                key={c}
+                                className={currency === c ? "active" : ""}
+                                disabled={!!editId || items.length > 0}
+                                onClick={() => {
+                                  setCurrency(c);
+                                  setTop("");
+                                  setBottom("");
+                                }}
+                              >
+                                {c === "THB" ? "บาท" : "กีบ (K)"}
+                              </button>
+                            ))}
+                          </div>
                           {["2 ตัว", "3 ตัว"].includes(mode) && (
                             <button
                               onClick={() =>
@@ -1000,73 +1051,133 @@ export default function App() {
                                 inputSize +
                                 " หลัก"}
                           </span>
-                          <div className="number-entry-field" onClick={() => numberInput.current?.focus()}>
+                          <div
+                            className="number-entry-field"
+                            onClick={() => numberInput.current?.focus()}
+                          >
                             {inputTokens.completed.map((number, index) => (
                               <span className="number-entry-badge" key={index}>
                                 <span>{number}</span>
-                                <button type="button" aria-label={`ลบเลข ${number} รายการที่ ${index + 1}`} onClick={() => removeInputEntry(index)}>
+                                <button
+                                  type="button"
+                                  aria-label={`ลบเลข ${number} รายการที่ ${index + 1}`}
+                                  onClick={() => removeInputEntry(index)}
+                                >
                                   <X size={12} />
                                 </button>
                               </span>
                             ))}
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            aria-label="เลขที่ต้องการซื้อ"
-                            ref={numberInput}
-                            value={inputTokens.pending}
-                            onKeyDown={(e) => {
-                              if (e.key === "Backspace" && !inputTokens.pending && inputTokens.completed.length && !e.nativeEvent.isComposing) {
+                            <input
+                              type="text"
+                              inputMode="numeric"
+                              aria-label="เลขที่ต้องการซื้อ"
+                              ref={numberInput}
+                              value={inputTokens.pending}
+                              onKeyDown={(e) => {
+                                if (
+                                  e.key === "Backspace" &&
+                                  !inputTokens.pending &&
+                                  inputTokens.completed.length &&
+                                  !e.nativeEvent.isComposing
+                                ) {
+                                  e.preventDefault();
+                                  const last = inputTokens.completed.at(-1);
+                                  setText(
+                                    [
+                                      ...inputTokens.completed.slice(0, -1),
+                                      last.slice(0, -1),
+                                    ].join(" "),
+                                  );
+                                  return;
+                                }
+                                if (
+                                  e.key !== " " ||
+                                  e.nativeEvent.isComposing ||
+                                  inputSize === 1
+                                )
+                                  return;
                                 e.preventDefault();
-                                const last = inputTokens.completed.at(-1);
-                                setText([...inputTokens.completed.slice(0, -1), last.slice(0, -1)].join(" "));
-                                return;
-                              }
-                              if (e.key !== " " || e.nativeEvent.isComposing || inputSize === 1) return;
-                              e.preventDefault();
-                              if (e.repeat) return;
-                              const batch = reverseBatch.current;
-                              if (batch && text === batch.expanded) {
-                                setText(batch.original);
-                                reverseBatch.current = null;
-                              } else {
-                                const expanded = appendReversedNumbers(text, inputSize);
-                                if (expanded === text) return;
-                                reverseBatch.current = { original: text, expanded };
-                                setText(expanded);
-                              }
-                              const field = e.target;
-                              requestAnimationFrame(() => field.setSelectionRange(field.value.length, field.value.length));
-                            }}
-                            onChange={(e) => {
-                              const raw = e.target.value.replace(/[^0-9\s]/g, "");
-                              setText([...inputTokens.completed, formatNumberInput(raw, inputSize)].join(" "));
-                              setPasted(false);
-                            }}
-                            onPaste={(e) => {
-                              if (mode === "6 กลับ") {
-                                e.preventDefault();
-                                message("โหมดนี้ไม่รองรับการวางข้อความ");
-                              } else {
-                                e.preventDefault();
-                                const pastedText = e.clipboardData.getData("text");
+                                if (e.repeat) return;
+                                const batch = reverseBatch.current;
+                                if (batch && text === batch.expanded) {
+                                  setText(batch.original);
+                                  reverseBatch.current = null;
+                                } else {
+                                  const expanded = appendReversedNumbers(
+                                    text,
+                                    inputSize,
+                                  );
+                                  if (expanded === text) return;
+                                  reverseBatch.current = {
+                                    original: text,
+                                    expanded,
+                                  };
+                                  setText(expanded);
+                                }
                                 const field = e.target;
-                                const pastedTokens = splitNumberInput(
-                                  inputTokens.pending.slice(0, field.selectionStart) +
-                                    pastedText + inputTokens.pending.slice(field.selectionEnd),
-                                  inputSize,
+                                requestAnimationFrame(() =>
+                                  field.setSelectionRange(
+                                    field.value.length,
+                                    field.value.length,
+                                  ),
                                 );
-                                setText([...inputTokens.completed, ...pastedTokens.completed, pastedTokens.pending].filter(Boolean).join(" "));
-                                setPasted(true);
-                                setReverse(false);
+                              }}
+                              onChange={(e) => {
+                                const raw = e.target.value.replace(
+                                  /[^0-9\s]/g,
+                                  "",
+                                );
+                                setText(
+                                  [
+                                    ...inputTokens.completed,
+                                    formatNumberInput(raw, inputSize),
+                                  ].join(" "),
+                                );
+                                setPasted(false);
+                              }}
+                              onPaste={(e) => {
+                                if (mode === "6 กลับ") {
+                                  e.preventDefault();
+                                  message("โหมดนี้ไม่รองรับการวางข้อความ");
+                                } else {
+                                  e.preventDefault();
+                                  const pastedText =
+                                    e.clipboardData.getData("text");
+                                  const field = e.target;
+                                  const pastedTokens = splitNumberInput(
+                                    inputTokens.pending.slice(
+                                      0,
+                                      field.selectionStart,
+                                    ) +
+                                      pastedText +
+                                      inputTokens.pending.slice(
+                                        field.selectionEnd,
+                                      ),
+                                    inputSize,
+                                  );
+                                  setText(
+                                    [
+                                      ...inputTokens.completed,
+                                      ...pastedTokens.completed,
+                                      pastedTokens.pending,
+                                    ]
+                                      .filter(Boolean)
+                                      .join(" "),
+                                  );
+                                  setPasted(true);
+                                  setReverse(false);
+                                }
+                              }}
+                              placeholder={
+                                inputTokens.completed.length
+                                  ? ""
+                                  : ["2 ตัว", "3 ตัว", "รูด", "วิ่ง"].includes(
+                                        mode,
+                                      )
+                                    ? "พิมพ์เลข หรือวางข้อความจากลูกค้า"
+                                    : "กรอกตัวเลข"
                               }
-                            }}
-                            placeholder={inputTokens.completed.length ? "" :
-                              ["2 ตัว", "3 ตัว", "รูด", "วิ่ง"].includes(mode)
-                                ? "พิมพ์เลข หรือวางข้อความจากลูกค้า"
-                                : "กรอกตัวเลข"
-                            }
-                          />
+                            />
                           </div>
                         </label>
                         <div className="amounts">
@@ -1197,7 +1308,9 @@ export default function App() {
                                         aria-label={
                                           "นำเลข " +
                                           row.number +
-                                          " รายการที่ " + (row.inputIndex + 1) + " ออกจากชุดก่อนเพิ่มโพย"
+                                          " รายการที่ " +
+                                          (row.inputIndex + 1) +
+                                          " ออกจากชุดก่อนเพิ่มโพย"
                                         }
                                         onClick={() =>
                                           removePreviewEntry(row.inputIndex)
@@ -1215,6 +1328,7 @@ export default function App() {
                         <button
                           className="primary full"
                           disabled={
+                            !config ||
                             blockedNumbers(
                               preview.map((i) => i.number),
                               config?.blocked,
@@ -1345,7 +1459,8 @@ export default function App() {
                                 onClick={() =>
                                   setItems((current) =>
                                     current.filter(
-                                      (_, index) => !row.indices.includes(index),
+                                      (_, index) =>
+                                        !row.indices.includes(index),
                                     ),
                                   )
                                 }
@@ -1368,7 +1483,7 @@ export default function App() {
                         </label>
                         <div className="totals">
                           <p>
-                            ยอดรวม <b>฿{money(total)}</b>
+                            ยอดรวม <b>{amountText(total, currency)}</b>
                           </p>
                         </div>
                         <button
@@ -1397,7 +1512,7 @@ export default function App() {
                             try {
                               await api.post(
                                 "/bills" + (editId ? "/" + editId : ""),
-                                { draw_id: draw.id, items, note },
+                                { draw_id: draw.id, items, note, currency },
                               );
                               setEditId(null);
                               setItems([]);
@@ -1411,19 +1526,32 @@ export default function App() {
                               try {
                                 await load();
                               } catch {
-                                setBillStatus("ส่งโพยแล้ว แต่โหลดรายการล่าสุดไม่ได้ กรุณารีเฟรชหน้า");
+                                setBillStatus(
+                                  "ส่งโพยแล้ว แต่โหลดรายการล่าสุดไม่ได้ กรุณารีเฟรชหน้า",
+                                );
                               }
                             } catch (e) {
-                              setBillStatus(e.response?.data?.error || e.message || "ส่งโพยไม่สำเร็จ");
+                              setBillStatus(
+                                e.response?.data?.error ||
+                                  e.message ||
+                                  "ส่งโพยไม่สำเร็จ",
+                              );
                             } finally {
                               submittingBill.current = false;
                               setBusy(false);
                             }
                           }}
                         >
-                          {submittingBill.current ? "กำลังส่งโพย…" : "ยืนยันส่งโพย"} <ArrowRight size={17} />
+                          {submittingBill.current
+                            ? "กำลังส่งโพย…"
+                            : "ยืนยันส่งโพย"}{" "}
+                          <ArrowRight size={17} />
                         </button>
-                        {billStatus && <p role="status" aria-live="polite">{billStatus}</p>}
+                        {billStatus && (
+                          <p role="status" aria-live="polite">
+                            {billStatus}
+                          </p>
+                        )}
                       </section>
                     </div>
                     <section className="panel recent">
@@ -1492,121 +1620,7 @@ export default function App() {
               {page === "สถิติ" && (
                 <>
                   {filters}
-                  <div className="cards metrics">
-                    {[
-                      [
-                        "จำนวนโพย",
-                        scopedBills.filter((b) => b.status === "active").length,
-                      ],
-                      [
-                        "ยอดขาย",
-                        scopedBills
-                          .filter((b) => b.status === "active")
-                          .reduce((s, b) => s + b.gross, 0),
-                      ],
-                      [
-                        "ยอดถูกรางวัล",
-                        scopedBills
-                          .filter((b) => b.status === "active")
-                          .reduce((s, b) => s + b.win, 0),
-                      ],
-                    ].map(([label, value]) => (
-                      <div className="panel" key={label}>
-                        <p className="muted">{label}</p>
-                        <h2>
-                          {label === "จำนวนโพย" ? value : "฿" + money(value)}
-                        </h2>
-                      </div>
-                    ))}
-                  </div>
-                  <section className="panel">
-                    <h2>ยอดขายแยกตามประเภทหวย</h2>
-                    {state.lotteries.map((l) => {
-                      const sum = scopedBills
-                          .filter(
-                            (b) =>
-                              b.status === "active" &&
-                              state.draws.find((d) => d.id === b.draw_id)
-                                ?.lottery_id === l.id,
-                          )
-                          .reduce((s, b) => s + b.gross, 0),
-                        max = Math.max(
-                          1,
-                          ...state.lotteries.map((l) =>
-                            scopedBills
-                              .filter(
-                                (b) =>
-                                  b.status === "active" &&
-                                  state.draws.find((d) => d.id === b.draw_id)
-                                    ?.lottery_id === l.id,
-                              )
-                              .reduce((s, b) => s + b.gross, 0),
-                          ),
-                        );
-                      return (
-                        <div className="chart-row" key={l.id}>
-                          <span>{l.name}</span>
-                          <div>
-                            <i style={{ width: (sum / max) * 100 + "%" }} />
-                          </div>
-                          <b>{money(sum)}</b>
-                        </div>
-                      );
-                    })}
-                    {u.role !== "Member" && (
-                      <>
-                        <h3>
-                          {u.role === "Admin"
-                            ? "ยอดแยกตาม Leader"
-                            : "ยอดแยกตามสมาชิก"}
-                        </h3>
-                        {state.users.map((person) => {
-                          const rows = scopedBills.filter(
-                            (b) =>
-                              b.status === "active" &&
-                              (u.role === "Admin"
-                                ? b.leader_id
-                                : b.member_id) === person.id,
-                          );
-                          return (
-                            <div className="item" key={person.id}>
-                              <span>
-                                {person.name} · {rows.length} โพย
-                              </span>
-                              <b>
-                                ฿{money(rows.reduce((s, b) => s + b.gross, 0))}
-                              </b>
-                            </div>
-                          );
-                        })}
-                      </>
-                    )}
-                    <h3>ผลรายโพย</h3>
-                    {scopedBills
-                      .slice()
-                      .reverse()
-                      .map((b) => (
-                        <div className="item" key={b.id}>
-                          <span>
-                            #{b.id} ·{" "}
-                            {state.draws.find((d) => d.id === b.draw_id)?.name}
-                          </span>
-                          <b>
-                            {b.status === "cancelled"
-                              ? "ยกเลิก"
-                              : state.draws.find((d) => d.id === b.draw_id)
-                                    ?.top3
-                                ? b.win > 0
-                                  ? "ถูกรางวัล ฿" + money(b.win)
-                                  : "ไม่ถูกรางวัล"
-                                : "รอผล"}
-                          </b>
-                        </div>
-                      ))}
-                    <p className="muted small">
-                      ยอดรางวัลแสดงเพื่อสรุปเท่านั้น
-                    </p>
-                  </section>
+                  <Statistics state={state} bills={scopedBills} />
                 </>
               )}
               {page === "ตั้งค่า" && (
@@ -1639,6 +1653,7 @@ export default function App() {
               draw={draw}
               items={items}
               total={total}
+              currency={currency}
               createdAt={receiptTime}
             />
           </div>
@@ -1697,7 +1712,7 @@ function Bill({ b, state, cancel, edit }) {
           #{String(b.id).padStart(5, "0")} · {d?.name} · {date(d?.draw_date)}
         </span>
         <b>
-          ฿{money(b.gross)}{" "}
+          {amountText(b.gross, currencyOf(b))}{" "}
           <small>{b.status === "cancelled" ? "ยกเลิกแล้ว" : "ส่งแล้ว"}</small>
         </b>
       </summary>
@@ -1706,15 +1721,14 @@ function Bill({ b, state, cancel, edit }) {
           <strong>{i.number}</strong>
           <span>{labels[i.type]}</span>
           <span>
-            ฿{money(i.amount)} · จ่าย {i.rate}
+            {amountText(i.amount, currencyOf(b))} · จ่าย {i.rate}
           </span>
         </div>
       ))}
+      <p>ยอดรวม {amountText(b.gross, currencyOf(b))}</p>
       <p>
-        ยอดรวม {money(b.gross)} บาท
-      </p>
-      <p>
-        ถูกรางวัล {money(b.win)} บาท · {b.note || "ไม่มีหมายเหตุ"}
+        ถูกรางวัล {amountText(b.win, currencyOf(b))} ·{" "}
+        {b.note || "ไม่มีหมายเหตุ"}
       </p>
       {edit && editable && b.status === "active" && (
         <button onClick={edit}>แก้ไขโพย</button>
@@ -2222,17 +2236,37 @@ function SettingsPage({ state, act, modal }) {
                 className="leader-rates-form"
                 onSubmit={(event) => {
                   event.preventDefault();
-                  const v = Object.fromEntries(new FormData(event.currentTarget));
+                  const v = Object.fromEntries(
+                    new FormData(event.currentTarget),
+                  );
                   act(async () => {
                     await api.post("/settings/" + l.id, {
                       closeAt: new Date().toISOString(),
                       limit: c.limit,
                       limits: Object.fromEntries(
-                        Object.keys(labels).map((k) => [k, Number(v["limit_" + k])]),
+                        Object.keys(labels).map((k) => [
+                          k,
+                          Number(v["limit_" + k]),
+                        ]),
                       ),
                       rates: Object.fromEntries(
                         Object.keys(labels).map((k) => [k, Number(v[k])]),
                       ),
+                      lak: {
+                        limit: c.lak?.limit || 1000,
+                        rates: Object.fromEntries(
+                          Object.keys(labels).map((k) => [
+                            k,
+                            Number(v["lak_" + k]),
+                          ]),
+                        ),
+                        limits: Object.fromEntries(
+                          Object.keys(labels).map((k) => [
+                            k,
+                            Number(v["lak_limit_" + k]),
+                          ]),
+                        ),
+                      },
                       blocked: [],
                       half: [],
                     });
@@ -2242,8 +2276,14 @@ function SettingsPage({ state, act, modal }) {
               >
                 <div className="rate-explanation">
                   <h3>อัตราจ่ายและวงเงินรับต่อเลข</h3>
-                  <p>วงเงินนับยอดรวมของสมาชิกทั้งเครือข่าย แยกตามเลข ประเภท และงวด</p>
-                  <p>เช่น 2 ตัวบนรับเลขละ 1,000 บาท: เลข 12 รับรวมได้ 1,000 บาทในหนึ่งงวด เลขอื่นและ 2 ตัวล่างนับวงเงินแยกกัน</p>
+                  <p>
+                    วงเงินนับยอดรวมของสมาชิกทั้งเครือข่าย แยกตามเลข ประเภท
+                    และงวด
+                  </p>
+                  <p>
+                    เช่น 2 ตัวบนรับเลขละ 1,000 บาท: เลข 12 รับรวมได้ 1,000
+                    บาทในหนึ่งงวด เลขอื่นและ 2 ตัวล่างนับวงเงินแยกกัน
+                  </p>
                 </div>
                 {[
                   ["2 ตัว", ["2top", "2bottom"]],
@@ -2259,7 +2299,9 @@ function SettingsPage({ state, act, modal }) {
                           <label>
                             อัตราจ่ายต่อ 1 บาท
                             <input
-                              aria-label={labels[type] + " — อัตราจ่ายต่อ 1 บาท"}
+                              aria-label={
+                                labels[type] + " — อัตราจ่ายต่อ 1 บาท"
+                              }
                               name={type}
                               type="number"
                               min="0"
@@ -2271,7 +2313,10 @@ function SettingsPage({ state, act, modal }) {
                           <label>
                             รับสูงสุดต่อเลขในหนึ่งงวด (บาท)
                             <input
-                              aria-label={labels[type] + " — รับสูงสุดต่อเลขในหนึ่งงวด (บาท)"}
+                              aria-label={
+                                labels[type] +
+                                " — รับสูงสุดต่อเลขในหนึ่งงวด (บาท)"
+                              }
                               name={"limit_" + type}
                               type="number"
                               min="0.01"
@@ -2285,7 +2330,45 @@ function SettingsPage({ state, act, modal }) {
                     </div>
                   </fieldset>
                 ))}
-                <button className="primary rate-save">บันทึกอัตราจ่ายและวงเงิน</button>
+                <fieldset className="rate-group">
+                  <legend>กีบ (K) · 1 K = 1,000 กีบ</legend>
+                  <p>
+                    ซื้อ 1 K จ่ายกี่ K เช่น อัตรา 95 คือซื้อ 1,000 กีบ จ่าย
+                    95,000 กีบ · วงเงินกีบนับแยกจากบาท
+                  </p>
+                  <div className="rate-type-grid">
+                    {Object.keys(labels).map((type) => (
+                      <section className="rate-type-card" key={type}>
+                        <h4>{labels[type]}</h4>
+                        <label>
+                          อัตราจ่ายต่อ 1 K (จ่ายเป็น K)
+                          <input
+                            name={"lak_" + type}
+                            type="number"
+                            min="0"
+                            step="0.01"
+                            required
+                            defaultValue={c.lak?.rates?.[type] ?? c.rates[type]}
+                          />
+                        </label>
+                        <label>
+                          รับสูงสุดต่อเลขในหนึ่งงวด (K)
+                          <input
+                            name={"lak_limit_" + type}
+                            type="number"
+                            min="0.01"
+                            step="0.01"
+                            required
+                            defaultValue={c.lak?.limits?.[type] ?? 1000}
+                          />
+                        </label>
+                      </section>
+                    ))}
+                  </div>
+                </fieldset>
+                <button className="primary rate-save">
+                  บันทึกอัตราจ่ายและวงเงิน
+                </button>
               </form>
             </section>
           );
@@ -2389,23 +2472,37 @@ function DrawRulesCard({ lottery, state, act, modal }) {
 }
 
 const CustomerReceipt = React.forwardRef(function CustomerReceipt(
-  { draw, items, total, createdAt },
+  { draw, items, total, createdAt, currency },
   ref,
 ) {
+  const lao = currency === "LAK";
+  const receiptDate = (value) => (lao ? laoReceiptDate(value) : date(value));
+  const categories = { "2 ตัว": "2 ໂຕ", "3 ตัว": "3 ໂຕ", วิ่ง: "ແລ່ນ" };
   return (
-    <div ref={ref} className="customer-receipt">
-      <h2>คีย์เลข · {draw.name}</h2>
-      <p>งวด {date(draw.draw_date)}</p>
+    <div ref={ref} className="customer-receipt" lang={lao ? "lo" : "th"}>
+      <h2>
+        {lao ? "ໃບຫວຍ" : "คีย์เลข"} · {draw.name}
+      </h2>
+      <p>
+        {lao ? "ງວດ" : "งวด"} {receiptDate(draw.draw_date)} ·{" "}
+        {lao ? "K ກີບ" : unit(currency)}
+        {lao ? " (1 K = 1,000 ກີບ)" : ""}
+      </p>
       <p className="receipt-created">
-        วันที่ {date(createdAt)} เวลา{" "}
-        {createdAt.toLocaleTimeString("th-TH", {
+        {lao ? "ວັນທີ" : "วันที่"} {receiptDate(createdAt)}{" "}
+        {lao ? "ເວລາ" : "เวลา"}{" "}
+        {createdAt.toLocaleTimeString(lao ? "lo-LA" : "th-TH", {
           timeZone: "Asia/Bangkok",
           hour12: false,
         })}
       </p>
       {summaryModes(items).map((group) => (
         <section className="receipt-mode" key={group.category}>
-          <h3>{group.category}</h3>
+          <h3>
+            {lao
+              ? categories[group.category] || group.category
+              : group.category}
+          </h3>
           {group.rows.map((row, index) => (
             <div className="receipt-number-set" key={index}>
               <b>{row.numbers.join(", ")}</b>
@@ -2416,7 +2513,10 @@ const CustomerReceipt = React.forwardRef(function CustomerReceipt(
           ))}
         </section>
       ))}
-      <h3>ยอดชำระ ฿{money(total)}</h3>
+      <h3>
+        {lao ? "ຍອດຊຳລະ" : "ยอดชำระ"}{" "}
+        {lao ? `${money(total)} K ກີບ` : amountText(total, currency)}
+      </h3>
     </div>
   );
 });

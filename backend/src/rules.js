@@ -13,7 +13,15 @@ export const defaults = {
   half: [],
   closeAt: "",
 };
-export function price(items, config) {
+export const billCurrency = (bill) => bill.items?.[0]?.currency || "THB";
+export function currencyConfig(config, currency = "THB") {
+  if (!["THB", "LAK"].includes(currency)) throw Error("สกุลเงินไม่ถูกต้อง");
+  if (currency === "THB") return config;
+  if (!config.lak) throw Error("หัวหน้ายังไม่ได้ตั้งค่าเงินกีบ");
+  return { ...config, ...config.lak };
+}
+export function price(items, config, currency = "THB") {
+  config = currencyConfig(config, currency);
   if (!Array.isArray(items) || !items.length || items.length > 1000)
     throw Error("โพยต้องมี 1–1000 รายการ");
   const result = items.map((i) => {
@@ -23,6 +31,7 @@ export function price(items, config) {
         ? 3
         : 1;
     if (
+      (i.currency != null && i.currency !== currency) ||
       !types.includes(i.type) ||
       !new RegExp(`^[0-9]{${length}}$`).test(i.number) ||
       !Number.isFinite(i.amount) ||
@@ -34,6 +43,7 @@ export function price(items, config) {
     const { discount, net, ...item } = i;
     return {
       ...item,
+      currency,
       rate:
         Number(config.rates[i.type]) *
         (config.half.includes(i.number) ? 0.5 : 1),
@@ -63,4 +73,22 @@ export function winnings(bill, draw) {
                 : draw.bottom2?.includes(i.number);
     return sum + (win ? i.amount * i.rate : 0);
   }, 0);
+}
+
+export function checkLimits(existing, items, config, currency) {
+  const totals = {};
+  for (const i of [
+    ...existing
+      .filter((b) => billCurrency(b) === currency)
+      .flatMap((b) => b.items),
+    ...items,
+  ]) {
+    const key = i.type + ":" + i.number;
+    totals[key] = (totals[key] || 0) + i.amount;
+    if (
+      Math.round(totals[key] * 100) >
+      Math.round(Number(config.limits?.[i.type] ?? config.limit) * 100)
+    )
+      throw Error("เลข " + i.number + " เกินวงเงินรับซื้อ");
+  }
 }

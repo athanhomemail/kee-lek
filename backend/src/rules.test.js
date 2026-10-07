@@ -1,6 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { price, defaults, winnings } from "./rules.js";
+import {
+  price,
+  defaults,
+  winnings,
+  billCurrency,
+  currencyConfig,
+  checkLimits,
+} from "./rules.js";
 test("legacy discounts are ignored and full amounts are recorded", () => {
   const b = price(
     [
@@ -62,6 +69,54 @@ test("pricing preserves duplicate entries and their identity", () => {
   ]);
   const bill = price(items, defaults);
   assert.equal(bill.items.length, 4);
-  assert.deepEqual(bill.items.map((item) => item.entryId), ["first", "first", "second", "second"]);
+  assert.deepEqual(
+    bill.items.map((item) => item.entryId),
+    ["first", "first", "second", "second"],
+  );
   assert.equal(bill.gross, 80);
+});
+
+test("kip bills use K amounts and snapshot separate payout rates", () => {
+  const config = {
+    ...defaults,
+    lak: { rates: { ...defaults.rates, "2top": 80 }, limit: 10 },
+  };
+  const b = price([{ number: "12", type: "2top", amount: 10 }], config, "LAK");
+  assert.equal(b.gross, 10);
+  assert.equal(billCurrency(b), "LAK");
+  assert.equal(winnings(b, { top2: "12" }), 800);
+  assert.equal(
+    price([{ number: "12", type: "2top", amount: 10 }], config).items[0].rate,
+    95,
+  );
+  assert.equal(billCurrency({ items: [{ amount: 100 }] }), "THB");
+  assert.throws(() =>
+    price(
+      [{ number: "12", type: "2top", amount: 1, currency: "THB" }],
+      config,
+      "LAK",
+    ),
+  );
+  assert.throws(() => currencyConfig(config, "USD"));
+  assert.throws(() => currencyConfig(defaults, "LAK"));
+});
+test("limits accumulate within one currency and keep legacy baht separate", () => {
+  const existing = [
+    { items: [{ number: "12", type: "2top", amount: 1000 }] },
+    { items: [{ number: "12", type: "2top", amount: 9, currency: "LAK" }] },
+  ];
+  const config = { limit: 10 };
+  const items = [{ number: "12", type: "2top", amount: 1, currency: "LAK" }];
+  assert.doesNotThrow(() => checkLimits(existing, items, config, "LAK"));
+  assert.throws(() =>
+    checkLimits(existing, [{ ...items[0], amount: 2 }], config, "LAK"),
+  );
+  assert.throws(() =>
+    checkLimits(
+      existing,
+      [{ ...items[0], amount: 1, currency: "THB" }],
+      defaults,
+      "THB",
+    ),
+  );
 });
