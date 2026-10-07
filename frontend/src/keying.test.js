@@ -146,3 +146,58 @@ test("keyboard reversal appends every entry without losing original duplicates o
 test("six reverse preserves separate input entries", () => {
   assert.equal(numbers("123 321", "6 กลับ").length, 12);
 });
+
+test("removing a duplicate input entry removes only the selected occurrence", async () => {
+  const { removeNumberInputEntry, appendReversedNumbers } = await import("./keying.js");
+  const text = appendReversedNumbers("12 12", 2);
+  for (const index of [0, 1]) {
+    const remaining = removeNumberInputEntry(text, 2, index);
+    assert.deepEqual(numbers(remaining, "2 ตัว"), ["12", "21", "21"]);
+    assert.equal(makeItemsWithIds(numbers(remaining, "2 ตัว"), "2 ตัว", 10, 20, 2).length, 6);
+  }
+  assert.deepEqual(numbers(removeNumberInputEntry(text, 2, 3), "2 ตัว"), ["12", "12", "21"]);
+  assert.equal(removeNumberInputEntry("01 01 2", 2, 1), "01  2");
+});
+
+test("input badges and deletion ignore prices and preserve pasted content", async () => {
+  const { numberInputEntries, removeNumberInputEntry } = await import("./keying.js");
+  const text = "12 12 =50\n21 21 50*50บนล่าง";
+  assert.deepEqual(numberInputEntries(text, 2).map((entry) => entry.number), ["12", "12", "21", "21"]);
+  const remaining = removeNumberInputEntry(text, 2, 1);
+  assert.equal(remaining, "12  =50\n21 21 50*50บนล่าง");
+  assert.deepEqual(numbers(remaining, "2 ตัว"), ["12", "21", "21"]);
+  assert.equal(removeNumberInputEntry(text, 2, 99), text);
+});
+
+test("generated entries are excluded by occurrence rather than number value", async () => {
+  const { excludeNumberEntries } = await import("./keying.js");
+  assert.deepEqual(excludeNumberEntries(["12", "12", "21", "21"], [1]), ["12", "21", "21"]);
+  const generated = numbers("123 123", "6 กลับ");
+  const remaining = excludeNumberEntries(generated, [0, 7]);
+  assert.equal(remaining.length, 10);
+  assert.equal(remaining.filter((number) => number === "123").length, 1);
+});
+
+test("completed numbers become badges while only incomplete digits remain editable", async () => {
+  const { splitNumberInput } = await import("./keying.js");
+  assert.deepEqual(splitNumberInput("1", 2), { completed: [], pending: "1" });
+  assert.deepEqual(splitNumberInput("12", 2), { completed: ["12"], pending: "" });
+  assert.deepEqual(splitNumberInput("12 12 3", 2), { completed: ["12", "12"], pending: "3" });
+  assert.deepEqual(splitNumberInput("0102034", 2), { completed: ["01", "02", "03"], pending: "4" });
+  assert.deepEqual(splitNumberInput("1234567", 3), { completed: ["123", "456"], pending: "7" });
+  assert.deepEqual(splitNumberInput("12 12 =50\n21 21 50*50บนล่าง", 2), { completed: ["12", "12", "21", "21"], pending: "" });
+});
+
+test("inline typing, reversal and deletion preserve duplicate badge entries", async () => {
+  const { splitNumberInput, formatNumberInput, appendReversedNumbers, removeNumberInputEntry } = await import("./keying.js");
+  let text = "";
+  for (const digit of "1212") {
+    const { completed, pending } = splitNumberInput(text, 2);
+    text = [...completed, formatNumberInput(pending + digit, 2)].join(" ");
+  }
+  assert.deepEqual(splitNumberInput(text, 2), { completed: ["12", "12"], pending: "" });
+  text = appendReversedNumbers(text, 2);
+  assert.deepEqual(splitNumberInput(text, 2), { completed: ["12", "12", "21", "21"], pending: "" });
+  text = removeNumberInputEntry(text, 2, 1);
+  assert.deepEqual(splitNumberInput(text, 2), { completed: ["12", "21", "21"], pending: "" });
+});

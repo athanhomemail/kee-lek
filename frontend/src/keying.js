@@ -174,3 +174,36 @@ export function appendReversedNumbers(text, size) {
   if (size < 2 || !batch.length) return text;
   return text + (stripped !== text ? "\n" : /\s$/.test(text) ? "" : " ") + batch.map((n) => [...n].reverse().join("")).join(" ");
 }
+
+// Use the same price boundary as the parser so price digits never become badges.
+export function numberInputEntries(text, size) {
+  const stripped = text.replace(
+    /(?:=\s*\d+(?:\s*[*x×]\s*\d+)*|\d+\s*[*x×]\s*\d+(?:\s*[*x×]\s*\d+)*|\d+\s*(?:บน|ล่าง|โต๊ด|บาท)).*$/gm,
+    (price) => " ".repeat(price.length),
+  );
+  return [...(size === 1 ? text : stripped).matchAll(size === 1 ? /\d/g : /\d+/g)]
+    .filter((match) => match[0].length === size)
+    .map((match) => ({ number: match[0], start: match.index, end: match.index + match[0].length }));
+}
+
+export function removeNumberInputEntry(text, size, index) {
+  const entry = numberInputEntries(text, size)[index];
+  if (!entry) return text;
+  return text.slice(0, entry.start) + text.slice(entry.end);
+}
+
+export function excludeNumberEntries(nums, excluded) {
+  return nums.filter((_, index) => !excluded.includes(index));
+}
+
+export function splitNumberInput(text, size) {
+  const stripped = text.replace(
+    /(?:=\s*\d+(?:\s*[*x×]\s*\d+)*|\d+\s*[*x×]\s*\d+(?:\s*[*x×]\s*\d+)*|\d+\s*(?:บน|ล่าง|โต๊ด|บาท)).*$/gm,
+    "",
+  );
+  const formatted = formatNumberInput(stripped, size);
+  const entries = numberInputEntries(formatted, size);
+  const pending = formatted.replace(/\d+/g, (run) => run.length === size ? "" : run)
+    .match(/\d+/g)?.join(" ") || "";
+  return { completed: entries.map((entry) => entry.number), pending };
+}

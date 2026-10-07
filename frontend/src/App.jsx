@@ -31,6 +31,9 @@ import {
   formatNumberInput,
   blockedNumbers,
   appendReversedNumbers,
+  removeNumberInputEntry,
+  excludeNumberEntries,
+  splitNumberInput,
 } from "./keying";
 import { accessTime } from "./access.js";
 import { nextDraws, resultDraws, homePage } from "./draws";
@@ -353,24 +356,35 @@ export default function App() {
       : ["รูด", "วิ่ง"].includes(inputMode)
         ? 1
         : 2;
+  const inputTokens = splitNumberInput(text, inputSize);
   let preview = [];
   try {
-    if (text)
-      preview = makeItems(
-        numbers(
-          text,
-          inputMode,
-          mode === "วิน" ? false : reverse,
-          digits,
-          doubles,
-        ),
-        mode,
-        1,
-        1,
+    if (text) {
+      const previewNumbers = numbers(
+        text,
+        inputMode,
+        mode === "วิน" ? false : reverse,
         digits,
+        doubles,
       );
+      preview = makeItems(previewNumbers, mode, 1, 1, digits);
+    }
   } catch {}
-  preview = preview.filter((i) => !excludedNumbers.includes(i.number));
+  const previewEntries = draftRows(preview).map((row, index) => ({ ...row, inputIndex: index }))
+    .filter((row) => !excludedNumbers.includes(row.inputIndex));
+  const previewIds = new Set(previewEntries.map((row) => row.entryId));
+  preview = preview.filter((item) => previewIds.has(item.entryId));
+  const removeInputEntry = (index) => {
+    setExcludedNumbers([]);
+    setText((current) => removeNumberInputEntry(current, inputSize, index));
+  };
+  const removePreviewEntry = (index) => {
+    if (["รูด", "6 กลับ"].includes(inputMode) || reverse) {
+      setExcludedNumbers((current) => [...current, index]);
+    } else {
+      removeInputEntry(index);
+    }
+  };
   const previewRemaining = (number, type) =>
     available({ number, type }) -
     items
@@ -391,14 +405,14 @@ export default function App() {
           doubles,
         ),
         added = makeItems(
-          nums.filter((number) => !excludedNumbers.includes(number)),
+          excludeNumberEntries(nums, excludedNumbers),
           mode,
           top,
           bottom,
           digits,
         );
       const closed = blockedNumbers(
-        nums.filter((number) => !excludedNumbers.includes(number)),
+        excludeNumberEntries(nums, excludedNumbers),
         config?.blocked,
       );
       if (closed.length)
@@ -1016,10 +1030,28 @@ export default function App() {
                                 inputSize +
                                 " หลัก"}
                           </span>
-                          <textarea
+                          <div className="number-entry-field" onClick={() => numberInput.current?.focus()}>
+                            {inputTokens.completed.map((number, index) => (
+                              <span className="number-entry-badge" key={index}>
+                                <span>{number}</span>
+                                <button type="button" aria-label={`ลบเลข ${number} รายการที่ ${index + 1}`} onClick={() => removeInputEntry(index)}>
+                                  <X size={12} />
+                                </button>
+                              </span>
+                            ))}
+                          <input
+                            type="text"
+                            inputMode="numeric"
+                            aria-label="เลขที่ต้องการซื้อ"
                             ref={numberInput}
-                            value={text}
+                            value={inputTokens.pending}
                             onKeyDown={(e) => {
+                              if (e.key === "Backspace" && !inputTokens.pending && inputTokens.completed.length && !e.nativeEvent.isComposing) {
+                                e.preventDefault();
+                                const last = inputTokens.completed.at(-1);
+                                setText([...inputTokens.completed.slice(0, -1), last.slice(0, -1)].join(" "));
+                                return;
+                              }
                               if (e.key !== " " || e.nativeEvent.isComposing || inputSize === 1) return;
                               e.preventDefault();
                               if (e.repeat) return;
@@ -1037,21 +1069,9 @@ export default function App() {
                               requestAnimationFrame(() => field.setSelectionRange(field.value.length, field.value.length));
                             }}
                             onChange={(e) => {
-                              const field = e.target;
-                              const raw = field.value;
-                              const cursor = field.selectionStart;
-                              const next = formatNumberInput(raw, inputSize);
-                              setText(next);
+                              const raw = e.target.value.replace(/[^0-9\s]/g, "");
+                              setText([...inputTokens.completed, formatNumberInput(raw, inputSize)].join(" "));
                               setPasted(false);
-                              if (next !== raw) {
-                                const position = formatNumberInput(
-                                  raw.slice(0, cursor),
-                                  inputSize,
-                                ).length;
-                                requestAnimationFrame(() =>
-                                  field.setSelectionRange(position, position),
-                                );
-                              }
                             }}
                             onPaste={(e) => {
                               if (mode === "6 กลับ") {
@@ -1059,30 +1079,25 @@ export default function App() {
                                 message("โหมดนี้ไม่รองรับการวางข้อความ");
                               } else {
                                 e.preventDefault();
-                                const pastedText =
-                                  e.clipboardData.getData("text");
-                                const hasPrices =
-                                  /[=*x×]|บน|ล่าง|โต๊ด|บาท/.test(pastedText);
-                                const value =
-                                  hasPrices && ["2 ตัว", "3 ตัว"].includes(mode)
-                                    ? pastedText
-                                    : formatNumberInput(pastedText, inputSize);
+                                const pastedText = e.clipboardData.getData("text");
                                 const field = e.target;
-                                setText(
-                                  text.slice(0, field.selectionStart) +
-                                    value +
-                                    text.slice(field.selectionEnd),
+                                const pastedTokens = splitNumberInput(
+                                  inputTokens.pending.slice(0, field.selectionStart) +
+                                    pastedText + inputTokens.pending.slice(field.selectionEnd),
+                                  inputSize,
                                 );
+                                setText([...inputTokens.completed, ...pastedTokens.completed, pastedTokens.pending].filter(Boolean).join(" "));
                                 setPasted(true);
                                 setReverse(false);
                               }
                             }}
-                            placeholder={
+                            placeholder={inputTokens.completed.length ? "" :
                               ["2 ตัว", "3 ตัว", "รูด", "วิ่ง"].includes(mode)
                                 ? "พิมพ์เลข หรือวางข้อความจากลูกค้า"
                                 : "กรอกตัวเลข"
                             }
                           />
+                          </div>
                         </label>
                         <div className="amounts">
                           <label>
@@ -1147,7 +1162,7 @@ export default function App() {
                                 <span role="columnheader" aria-label="ลบเลข" />
                               </div>
                               <div className="capacity-body">
-                                {draftRows(preview).map((row) => {
+                                {previewEntries.map((row) => {
                                   const closed = config?.blocked?.includes(
                                     row.number,
                                   );
@@ -1212,13 +1227,10 @@ export default function App() {
                                         aria-label={
                                           "นำเลข " +
                                           row.number +
-                                          " ออกจากชุดก่อนเพิ่มโพย"
+                                          " รายการที่ " + (row.inputIndex + 1) + " ออกจากชุดก่อนเพิ่มโพย"
                                         }
                                         onClick={() =>
-                                          setExcludedNumbers((current) => [
-                                            ...current,
-                                            row.number,
-                                          ])
+                                          removePreviewEntry(row.inputIndex)
                                         }
                                       >
                                         <X size={13} />
