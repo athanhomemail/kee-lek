@@ -1654,8 +1654,11 @@ export default function App() {
               )}
               {page === "สถิติ" && (
                 <>
-                  {filters}
-                  <Statistics state={state} bills={scopedBills} />
+                  <Statistics
+                    state={state}
+                    bills={scopedBills}
+                    filters={filters}
+                  />
                 </>
               )}
               {page === "ตั้งค่า" && (

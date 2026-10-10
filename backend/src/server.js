@@ -163,10 +163,10 @@ app.get(
     );
     const bills = await query(
       u.role === "Admin"
-        ? "SELECT * FROM bills"
+        ? "SELECT b.*,u.name AS member_name FROM bills b JOIN users u ON u.id=b.member_id"
         : u.role === "Leader"
-          ? "SELECT * FROM bills WHERE leader_id=?"
-          : "SELECT * FROM bills WHERE member_id=?",
+          ? "SELECT b.*,u.name AS member_name FROM bills b JOIN users u ON u.id=b.member_id WHERE b.leader_id=?"
+          : "SELECT b.*,u.name AS member_name FROM bills b JOIN users u ON u.id=b.member_id WHERE b.member_id=?",
       u.role === "Admin" ? [] : [u.id],
     );
     const settings = await query("SELECT * FROM settings WHERE leader_id=?", [
