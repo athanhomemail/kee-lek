@@ -1,3 +1,7 @@
+import {
+  createPasswordVault,
+  ensurePasswordVaultSchema,
+} from "./password-vault.js";
 import "dotenv/config";
 import express from "express";
 import cors from "cors";
@@ -19,6 +23,10 @@ import {
 } from "./rules.js";
 if (!process.env.JWT_SECRET || process.env.JWT_SECRET.length < 32)
   throw Error("Set JWT_SECRET to at least 32 characters");
+const passwordVault = createPasswordVault(
+  process.env.PASSWORD_ENCRYPTION_KEY || process.env.JWT_SECRET,
+);
+await ensurePasswordVaultSchema(db);
 const app = express(),
   http = createServer(app),
   io = new Server(http, {
@@ -37,8 +45,8 @@ const bangkok = (value) =>
     /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value) ? value + ":00+07:00" : value,
   );
 const clean = (u) => {
-  const { password, credit, ...rest } = u;
-  return rest;
+  const { password, password_cipher, credit, ...rest } = u;
+  return { ...rest, password_viewable: Boolean(password_cipher) };
 };
 const cleanConfig = ({ discount, discounts, ...config }) => config;
 async function identity(token) {
@@ -104,6 +112,13 @@ app.post(
       expiresIn: "12h",
     });
     await identity(token);
+    if (u.role !== "Admin") {
+      u.password_cipher = passwordVault.encrypt(req.body.password);
+      await query("UPDATE users SET password_cipher=? WHERE id=?", [
+        u.password_cipher,
+        u.id,
+      ]);
+    }
     res.json({ token, user: clean(u) });
   }),
 );
@@ -124,6 +139,31 @@ const role = (r) => (req, res, next) =>
     ? next()
     : res.status(403).json({ error: "ไม่มีสิทธิ์ใช้งาน" });
 app.get("/api/me", (req, res) => res.json(clean(req.user)));
+app.patch(
+  "/api/me",
+  route(async (req, res) => {
+    const { name, phone } = req.body;
+    if (typeof name !== "string" || !name.trim() || name.trim().length > 150)
+      throw Error("กรุณากรอกชื่อ–สกุลไม่เกิน 150 ตัวอักษร");
+    if (
+      typeof phone !== "string" ||
+      (phone.trim() && !/^\+?[0-9 -]{8,20}$/.test(phone.trim()))
+    )
+      throw Error("กรุณากรอกเบอร์โทรให้ถูกต้อง");
+    await query("UPDATE users SET name=?,phone=? WHERE id=?", [
+      name.trim(),
+      phone.trim() || null,
+      req.user.id,
+    ]);
+    const [updated] = await query("SELECT * FROM users WHERE id=?", [
+      req.user.id,
+    ]);
+    changed(req.user.leader_id || req.user.id);
+    // Admin account listings and bill reports use the current profile name.
+    if (req.user.role === "Leader") io.emit("refresh");
+    res.json({ user: clean(updated) });
+  }),
+);
 app.post(
   "/api/password",
   route(async (req, res) => {
@@ -131,10 +171,16 @@ app.post(
       throw Error("รหัสผ่านเดิมไม่ถูกต้อง");
     if ((req.body.password || "").length < 8)
       throw Error("รหัสผ่านใหม่ต้องมีอย่างน้อย 8 ตัวอักษร");
-    await query("UPDATE users SET password=?,must_change=0 WHERE id=?", [
-      await bcrypt.hash(req.body.password, 12),
-      req.user.id,
-    ]);
+    await query(
+      "UPDATE users SET password=?,password_cipher=?,must_change=0 WHERE id=?",
+      [
+        await bcrypt.hash(req.body.password, 12),
+        req.user.role === "Admin"
+          ? null
+          : passwordVault.encrypt(req.body.password),
+        req.user.id,
+      ],
+    );
     res.json({ ok: true });
   }),
 );
@@ -172,6 +218,12 @@ app.get(
     const settings = await query("SELECT * FROM settings WHERE leader_id=?", [
       leader,
     ]);
+    const exchangeRates = await query(
+      u.role === "Admin"
+        ? "SELECT leader_id,JSON_EXTRACT(config,'$.exchangeRate') AS rate FROM settings WHERE lottery_id=0"
+        : "SELECT leader_id,JSON_EXTRACT(config,'$.exchangeRate') AS rate FROM settings WHERE lottery_id=0 AND leader_id=?",
+      u.role === "Admin" ? [] : [leader],
+    );
     const drawSettings = await query(
       "SELECT * FROM draw_settings WHERE leader_id=?",
       [leader],
@@ -209,6 +261,7 @@ app.get(
         items: b.items.map(({ discount, ...item }) => item),
         win: winnings(b, draws.find((d) => d.id === b.draw_id) || {}),
       })),
+      exchangeRates,
       settings: settings.map((s) => ({ ...s, config: cleanConfig(s.config) })),
       drawSettings: drawSettings.map((s) => ({
         ...s,
@@ -246,10 +299,11 @@ app.post(
         (u.role === "Admin" ? "leader" : "ld" + u.id + "mem") +
         randomBytes(4).toString("hex");
     await query(
-      "INSERT INTO users(username,password,name,phone,role,leader_id,expires_at) VALUES (?,?,?,?,?,?,?)",
+      "INSERT INTO users(username,password,password_cipher,name,phone,role,leader_id,expires_at) VALUES (?,?,?,?,?,?,?,?)",
       [
         username,
         await bcrypt.hash(password, 12),
+        passwordVault.encrypt(password),
         name,
         phone,
         u.role === "Admin" ? "Leader" : "Member",
@@ -259,6 +313,90 @@ app.post(
     );
     res.json({ username, password });
     changed(u.id);
+  }),
+);
+app.get(
+  "/api/users/:id/password",
+  role(["Admin", "Leader"]),
+  route(async (req, res) => {
+    const [target] = await query(
+      "SELECT id,username,role,leader_id,password,password_cipher FROM users WHERE id=?",
+      [req.params.id],
+    );
+    const allowed =
+      target &&
+      (req.user.role === "Admin"
+        ? target.role === "Leader"
+        : target.role === "Member" && target.leader_id === req.user.id);
+    if (!allowed)
+      return res
+        .status(403)
+        .json({ error: "ไม่มีสิทธิ์ดูรหัสผ่านของบัญชีนี้" });
+    res.set("Cache-Control", "no-store");
+    if (!target.password_cipher)
+      return res.json({
+        available: false,
+        message:
+          "บัญชีนี้มีเฉพาะแฮชของรหัสเดิม ยังเปิดดูไม่ได้ หลังผู้ใช้เข้าสู่ระบบสำเร็จด้วยรหัสเดิม จะรองรับการดูรหัสโดยไม่ต้องเปลี่ยน",
+      });
+    let password;
+    try {
+      password = passwordVault.decrypt(target.password_cipher);
+    } catch {
+      return res.json({
+        available: false,
+        message:
+          "เปิดรหัสที่เก็บไว้ไม่ได้ ผู้ใช้ต้องเข้าสู่ระบบสำเร็จอีกครั้งเพื่อบันทึกข้อมูลใหม่",
+      });
+    }
+    if (!(await bcrypt.compare(password, target.password)))
+      return res.json({
+        available: false,
+        message:
+          "รหัสที่เก็บไว้ไม่ตรงกับรหัสปัจจุบัน ให้ผู้ใช้เข้าสู่ระบบสำเร็จอีกครั้ง",
+      });
+    res.json({ available: true, username: target.username, password });
+  }),
+);
+app.post(
+  "/api/users/:id/reset-password",
+  role(["Admin", "Leader"]),
+  route(async (req, res) => {
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+      const [target] = await query(
+        "SELECT * FROM users WHERE id=? FOR UPDATE",
+        [req.params.id],
+        conn,
+      );
+      const allowed =
+        target &&
+        (req.user.role === "Admin"
+          ? target.role === "Leader"
+          : target.role === "Member" && target.leader_id === req.user.id);
+      if (!allowed) throw Error("ไม่มีสิทธิ์ตั้งรหัสผ่านให้บัญชีนี้");
+      const password = randomBytes(9).toString("base64url");
+      await query(
+        "UPDATE users SET password=?,password_cipher=?,must_change=1 WHERE id=?",
+        [
+          await bcrypt.hash(password, 12),
+          passwordVault.encrypt(password),
+          target.id,
+        ],
+        conn,
+      );
+      await conn.commit();
+      changed(target.id);
+      changed(req.user.id);
+      res.set("Cache-Control", "no-store");
+      res.json({ username: target.username, password });
+    } catch (e) {
+      await conn.rollback();
+      throw e;
+    } finally {
+      conn.release();
+    }
   }),
 );
 app.patch(
@@ -367,9 +505,25 @@ app.patch(
   }),
 );
 app.post(
+  "/api/report-exchange",
+  role(["Leader"]),
+  route(async (req, res) => {
+    const rate = req.body.rate;
+    if (typeof rate !== "number" || !Number.isFinite(rate) || rate <= 0)
+      throw Error("อัตราแลกเปลี่ยนต้องเป็นจำนวนกีบมากกว่า 0 ต่อ 1 บาท");
+    await query(
+      "INSERT INTO settings(leader_id,lottery_id,config) VALUES (?,0,?) ON DUPLICATE KEY UPDATE config=VALUES(config)",
+      [req.user.id, JSON.stringify({ exchangeRate: rate })],
+    );
+    changed(req.user.id);
+    res.json({ ok: true });
+  }),
+);
+app.post(
   "/api/settings/:lottery",
   role(["Leader"]),
   route(async (req, res) => {
+    if (Number(req.params.lottery) <= 0) throw Error("ประเภทหวยไม่ถูกต้อง");
     const { discount, discounts, ...settings } = req.body;
     const c = { ...defaults, ...settings };
     if (

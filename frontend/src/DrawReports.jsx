@@ -31,7 +31,6 @@ export default function DrawReports({ state, bills }) {
   const [limit, setLimit] = useState("50");
   const [sort, setSort] = useState("count");
   const [group, setGroup] = useState("member");
-  const [exchange, setExchange] = useState("");
   const [tableCurrency, setTableCurrency] = useState("THB");
   const draws = [...state.draws].sort(
     (a, b) =>
@@ -42,43 +41,60 @@ export default function DrawReports({ state, bills }) {
     side === "top" ? draw?.bottom2 || "00" : draw?.top3 || "000";
   const fixedInput = fixed ?? fixedDefault;
   const fixedResult = fixedInput.padStart(side === "top" ? 2 : 3, "0");
+  const exchangeRates = state.exchangeRates || [];
+  const exchangeRate = Number(
+    exchangeRates.find(
+      (r) =>
+        String(r.leader_id) === String(state.user.leader_id || state.user.id),
+    )?.rate,
+  );
   const forecast = useMemo(
-    () => forecastReport(bills, draw?.id, side, fixedResult),
-    [bills, draw?.id, side, fixedResult],
+    () => forecastReport(bills, draw?.id, side, fixedResult, exchangeRates),
+    [bills, draw?.id, side, fixedResult, state.exchangeRates],
   );
   const groups = useMemo(
-    () => reportGroups(bills, draw?.id, group, state.users),
-    [bills, draw?.id, group, state.users],
+    () => reportGroups(bills, draw?.id, group, state.users, exchangeRates),
+    [bills, draw?.id, group, state.users, state.exchangeRates],
   );
   const rows = [...forecast.rows].sort(
     (a, b) => a[sort] - b[sort] || a.number.localeCompare(b.number),
   );
   const visible = limit === "all" ? rows : rows.slice(0, Number(limit));
-  const exchangeRate = Number(exchange);
-  const combined = (row) =>
-    row.LAK === 0
-      ? money(row.THB)
-      : exchangeRate > 0 && Number.isFinite(exchangeRate)
-        ? money(row.THB + row.LAK / exchangeRate)
-        : "—";
+  const convertedMoney = (value) => (value == null ? "—" : money(value));
+  const combined = (row) => convertedMoney(row.totalTHB);
   const total = groups.reduce(
-    (sum, row) => ({ THB: sum.THB + row.THB, LAK: sum.LAK + row.LAK }),
-    { THB: 0, LAK: 0 },
+    (sum, row) => ({
+      THB: sum.THB + row.THB,
+      LAK: sum.LAK + row.LAK,
+      lakInTHB:
+        sum.lakInTHB === null || row.lakInTHB === null
+          ? null
+          : sum.lakInTHB + row.lakInTHB,
+      totalTHB:
+        sum.totalTHB === null || row.totalTHB === null
+          ? null
+          : sum.totalTHB + row.totalTHB,
+    }),
+    { THB: 0, LAK: 0, lakInTHB: 0, totalTHB: 0 },
   );
   const actual = useMemo(
     () =>
       draw?.top3 && draw?.bottom2
-        ? forecastReport(bills, draw.id, "top", draw.bottom2).rows.find(
-            (r) => r.top3 === draw.top3,
-          )
+        ? forecastReport(
+            bills,
+            draw.id,
+            "top",
+            draw.bottom2,
+            exchangeRates,
+          ).rows.find((r) => r.top3 === draw.top3)
         : null,
-    [bills, draw?.id, draw?.top3, draw?.bottom2],
+    [bills, draw?.id, draw?.top3, draw?.bottom2, state.exchangeRates],
   );
   const resultCell = (value) => (
     <td
       className={value < 0 ? "report-loss" : value > 0 ? "report-profit" : ""}
     >
-      {money(value)}
+      {value == null ? "—" : money(value)}
     </td>
   );
   const cellAmount = (value) => money(value[tableCurrency]);
@@ -134,6 +150,12 @@ export default function DrawReports({ state, bills }) {
         <div>
           <span>ยอดซื้อในงวด</span>
           <strong>{pair(forecast.received)}</strong>
+          <span>
+            กีบ → บาท: {convertedMoney(forecast.convertedReceived.lakInTHB)}
+          </span>
+          <span>
+            รวมเป็นบาท: {convertedMoney(forecast.convertedReceived.totalTHB)}
+          </span>
         </div>
         <div>
           <span>โพยที่ใช้งาน</span>
@@ -144,14 +166,28 @@ export default function DrawReports({ state, bills }) {
         <div>
           <span>ยอดจ่ายตามผลจริง</span>
           <strong>{actual ? pair(actual.paid) : "รอออกผล"}</strong>
+          <span>
+            กีบ → บาท: {actual ? convertedMoney(actual.lakPaidInTHB) : "—"}
+          </span>
         </div>
         <div>
           <span>กำไร / ขาดทุนตามผลจริง</span>
           <strong>
             {actual ? pair({ THB: actual.THB, LAK: actual.LAK }) : "—"}
           </strong>
+          <span>
+            รวมเป็นบาท: {actual ? convertedMoney(actual.totalProfitTHB) : "—"}
+          </span>
         </div>
       </div>
+      <p className="report-exchange-note">
+        {state.user.role === "Admin"
+          ? "แปลงยอดกีบตามอัตราล่าสุดของ Leader เจ้าของโพยแต่ละราย"
+          : exchangeRate > 0
+            ? `อัตราที่ Leader บันทึก: 1 บาท = ${money(exchangeRate)} กีบ`
+            : "ยังไม่ได้ตั้งอัตราแลกเปลี่ยน ให้ Leader บันทึกค่าในหน้าตั้งค่าเพื่อแสดงยอดแปลงเป็นบาท"}{" "}
+        · ใช้เฉพาะรายงาน · ยอดเดิมคงหน่วย K (1 K = 1,000 กีบ)
+      </p>
       <div className="report-tabs" role="tablist" aria-label="ประเภทรายงาน">
         {[
           ["forecast", "คาดการณ์กำไร–ขาดทุน", ChartNoAxesCombined],
@@ -363,6 +399,8 @@ export default function DrawReports({ state, bills }) {
                     <th>จำนวนถูก (รวม)</th>
                     <th>กำไร/ขาดทุน (บาท)</th>
                     <th>กำไร/ขาดทุน (K กีบ)</th>
+                    <th>กีบ → บาท</th>
+                    <th>กำไร/ขาดทุนรวม (บาท)</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -379,6 +417,8 @@ export default function DrawReports({ state, bills }) {
                       <td>{r.count}</td>
                       {resultCell(r.THB)}
                       {resultCell(r.LAK)}
+                      {resultCell(r.lakProfitInTHB)}
+                      {resultCell(r.totalProfitTHB)}
                     </tr>
                   ))}
                 </tbody>
@@ -396,21 +436,10 @@ export default function DrawReports({ state, bills }) {
                 </h3>
                 <span className="muted">เฉพาะงวดที่เลือก</span>
               </div>
-              <label>
-                อัตราแลกเปลี่ยน (K กีบ ต่อ 1 บาท)
-                <input
-                  type="number"
-                  min="0.000001"
-                  step="any"
-                  placeholder="กรอกเพื่อรวมยอดเป็นบาท"
-                  value={exchange}
-                  onChange={(e) => setExchange(e.target.value)}
-                />
-              </label>
             </div>
             <p className="muted">
-              ยอดซื้อเฉพาะโพยที่ยังใช้งานในงวดนี้ · ยอดรวมเป็นบาท = ยอดบาท + ยอด
-              K กีบ ÷ อัตราแลกเปลี่ยนที่กรอก
+              ยอดบาทและยอดกีบแสดงตามที่ซื้อจริง · กีบ → บาท = ยอด K × 1,000 ÷
+              อัตราที่ Leader บันทึก · หากไม่มีอัตราจะแสดง —
             </p>
             <div className="report-table-scroll">
               <table className="report-table">
@@ -419,6 +448,7 @@ export default function DrawReports({ state, bills }) {
                     <th>{group === "member" ? "ชื่อสมาชิก" : "ประเภท"}</th>
                     <th>ยอด (K กีบ)</th>
                     <th>ยอด (บาท)</th>
+                    <th>กีบ → บาท</th>
                     <th>ยอดทั้งหมด (บาท)</th>
                   </tr>
                 </thead>
@@ -428,12 +458,13 @@ export default function DrawReports({ state, bills }) {
                       <td>{group === "type" ? labels[r.key] : r.name}</td>
                       <td>{money(r.LAK)}</td>
                       <td>{money(r.THB)}</td>
+                      <td>{convertedMoney(r.lakInTHB)}</td>
                       <td>{combined(r)}</td>
                     </tr>
                   ))}
                   {!groups.length && (
                     <tr>
-                      <td colSpan={4}>ไม่มีรายการซื้อในงวดที่เลือก</td>
+                      <td colSpan={5}>ไม่มีรายการซื้อในงวดที่เลือก</td>
                     </tr>
                   )}
                 </tbody>
@@ -442,6 +473,7 @@ export default function DrawReports({ state, bills }) {
                     <th>รวม</th>
                     <th>{money(total.LAK)}</th>
                     <th>{money(total.THB)}</th>
+                    <th>{convertedMoney(total.lakInTHB)}</th>
                     <th>{combined(total)}</th>
                   </tr>
                 </tfoot>

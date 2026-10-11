@@ -33,6 +33,7 @@ services:
       TRUST_PROXY_HOPS: 2
       FRONTEND_URL: https://keelek.kuayrai.com
       JWT_SECRET: ${JWT_SECRET:?Generate deployment secrets first}
+      PASSWORD_ENCRYPTION_KEY: ${PASSWORD_ENCRYPTION_KEY:-}
       DB_HOST: db
       DB_PORT: 3306
       DB_USER: keelek

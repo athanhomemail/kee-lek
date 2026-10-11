@@ -13,6 +13,7 @@ umask 077
   printf 'MYSQL_ROOT_PASSWORD=%s\n' "$(openssl rand -hex 32)"
   printf 'MYSQL_PASSWORD=%s\n' "$(openssl rand -hex 32)"
   printf 'JWT_SECRET=%s\n' "$(openssl rand -hex 48)"
+  printf 'PASSWORD_ENCRYPTION_KEY=%s\n' "$(openssl rand -hex 48)"
   printf 'ADMIN_INITIAL_PASSWORD=%s\n' "$(openssl rand -hex 16)"
 } > "$output"
 printf '%s\n' 'Created deploy/.env with fresh secrets (mode 600). View the initial Admin password locally on the VPS; do not share this file.'

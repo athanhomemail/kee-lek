@@ -85,7 +85,13 @@ export function winsForResult(item, top3, bottom2) {
   }
 }
 
-export function reportGroups(bills, drawId, by = "type", users = []) {
+export function reportGroups(
+  bills,
+  drawId,
+  by = "type",
+  users = [],
+  exchangeRates,
+) {
   const groups = new Map();
   if (by === "type")
     for (const type of reportTypes)
@@ -104,13 +110,33 @@ export function reportGroups(bills, drawId, by = "type", users = []) {
           THB: 0,
           LAK: 0,
         });
-      groups.get(key)[currency] += Number(item.amount || 0);
+      const row = groups.get(key);
+      row[currency] += Number(item.amount || 0);
+      if (exchangeRates) {
+        row.lakInTHB ??= 0;
+        if (currency === "LAK") {
+          if (!row.missingRate) {
+            const converted = kipToBaht(
+              item.amount,
+              rateForBill(bill, exchangeRates),
+            );
+            if (converted === null) row.missingRate = true;
+            else row.lakInTHB += converted;
+          }
+        }
+      }
     }
   }
   return [...groups.values()].map((row) => ({
     ...row,
     THB: roundMoney(row.THB),
     LAK: roundMoney(row.LAK),
+    ...(exchangeRates
+      ? {
+          lakInTHB: row.missingRate ? null : row.lakInTHB || 0,
+          totalTHB: row.missingRate ? null : row.THB + (row.lakInTHB || 0),
+        }
+      : {}),
   }));
 }
 
@@ -119,6 +145,7 @@ export function forecastReport(
   drawId,
   side = "top",
   fixedResult = "00",
+  exchangeRates,
 ) {
   const selected = drawBills(bills, drawId);
   const purchase = Object.fromEntries(
@@ -128,6 +155,7 @@ export function forecastReport(
     (bill.items || []).map((item) => ({
       ...item,
       currency: reportCurrencyOf(bill),
+      exchangeRate: rateForBill(bill, exchangeRates),
     })),
   );
   const received = { THB: 0, LAK: 0 };
@@ -136,6 +164,9 @@ export function forecastReport(
       purchase[item.type][item.currency] += Number(item.amount);
     received[item.currency] += Number(item.net ?? item.amount);
   }
+  const convertedReceived = exchangeRates
+    ? convertedDrawTotals(bills, drawId, exchangeRates)
+    : null;
   const rows = Array.from(
     { length: side === "top" ? 1000 : 100 },
     (_, index) => {
@@ -146,9 +177,18 @@ export function forecastReport(
         reportTypes.map((type) => [type, { THB: 0, LAK: 0 }]),
       );
       let count = 0;
+      let lakPaidInTHB = 0;
       for (const item of entries)
         if (winsForResult(item, top3, bottom2)) {
           count++;
+          if (exchangeRates && item.currency === "LAK")
+            lakPaidInTHB = addConverted(
+              lakPaidInTHB,
+              kipToBaht(
+                Number(item.amount) * Number(item.rate || 0),
+                item.exchangeRate,
+              ),
+            );
           payout[item.type][item.currency] +=
             Number(item.amount) * Number(item.rate || 0);
         }
@@ -168,6 +208,19 @@ export function forecastReport(
         count,
         THB: roundMoney(received.THB - paid.THB),
         LAK: roundMoney(received.LAK - paid.LAK),
+        ...(exchangeRates
+          ? {
+              lakPaidInTHB,
+              lakProfitInTHB:
+                convertedReceived.lakInTHB === null || lakPaidInTHB === null
+                  ? null
+                  : convertedReceived.lakInTHB - lakPaidInTHB,
+              totalProfitTHB:
+                convertedReceived.totalTHB === null || lakPaidInTHB === null
+                  ? null
+                  : convertedReceived.totalTHB - paid.THB - lakPaidInTHB,
+            }
+          : {}),
       };
     },
   );
@@ -178,5 +231,37 @@ export function forecastReport(
     purchase,
     received: { THB: roundMoney(received.THB), LAK: roundMoney(received.LAK) },
     rows,
+    ...(exchangeRates ? { convertedReceived } : {}),
   };
+}
+
+// Stored LAK amounts are K units; exchange rates are actual kip per baht.
+export function kipToBaht(amountK, rate) {
+  const value = Number(rate);
+  return Number.isFinite(value) && value > 0
+    ? (Number(amountK) * 1000) / value
+    : null;
+}
+const rateForBill = (bill, exchangeRates) =>
+  exchangeRates?.find(
+    (entry) => String(entry.leader_id) === String(bill.leader_id),
+  )?.rate;
+const addConverted = (sum, value) =>
+  sum === null || value === null ? null : sum + value;
+export function convertedDrawTotals(bills, drawId, exchangeRates) {
+  let lakInTHB = 0,
+    thb = 0;
+  for (const bill of drawBills(bills, drawId))
+    for (const item of bill.items || []) {
+      if (reportCurrencyOf(bill) === "LAK")
+        lakInTHB = addConverted(
+          lakInTHB,
+          kipToBaht(
+            Number(item.net ?? item.amount),
+            rateForBill(bill, exchangeRates),
+          ),
+        );
+      else thb += Number(item.net ?? item.amount);
+    }
+  return { lakInTHB, totalTHB: lakInTHB === null ? null : thb + lakInTHB };
 }

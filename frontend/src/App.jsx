@@ -1,3 +1,8 @@
+import AccountProfile from "./AccountProfile.jsx";
+import PasswordInput from "./PasswordInput.jsx";
+import AdminLotterySettings from "./AdminLotterySettings.jsx";
+import UserPasswordAccess from "./UserPasswordAccess.jsx";
+import { ExchangeSettings, RateTable } from "./LeaderRates.jsx";
 import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
@@ -45,7 +50,7 @@ const api = axios.create({ baseURL: "/api" }),
     Number(n || 0).toLocaleString("th-TH", { minimumFractionDigits: 2 }),
   date = (d) => new Date(d).toLocaleDateString("th-TH");
 const menus = {
-  Admin: ["ผล", "ตั้งค่า", "สถิติ"],
+  Admin: ["ผล", "ตั้งค่า", "สถิติ", "บัญชี"],
   Leader: ["ผล", "โพย", "ตั้งค่า", "สถิติ", "บัญชี"],
   Member: ["ผล", "โพย", "คีย์", "สถิติ", "บัญชี"],
 };
@@ -69,13 +74,28 @@ function Form({ fields, onSubmit, submit = "บันทึก", className }) {
       {fields.map((f) => (
         <label key={f.name}>
           {f.label}
-          <input
-            required={f.required !== false}
-            name={f.name}
-            type={f.type || "text"}
-            defaultValue={f.value}
-            step={f.type === "number" ? "0.01" : undefined}
-          />
+          {f.type === "password" ? (
+            <PasswordInput
+              name={f.name}
+              aria-label={f.label}
+              required={f.required !== false}
+              defaultValue={f.value}
+              autoComplete={
+                f.name === "password" && f.label.includes("ใหม่")
+                  ? "new-password"
+                  : "current-password"
+              }
+            />
+          ) : (
+            <input
+              required={f.required !== false}
+              name={f.name}
+              type={f.type || "text"}
+              defaultValue={f.value}
+              autoComplete={f.name === "username" ? "username" : undefined}
+              step={f.type === "number" ? "0.01" : undefined}
+            />
+          )}
         </label>
       ))}
       <button className="primary">{submit}</button>
@@ -625,13 +645,23 @@ export default function App() {
   return (
     <div className="shell">
       <div className="topbar">
-        <div className="logo">
-          <span className="brand-symbol">
-            <Keyboard size={23} />
-          </span>{" "}
-          คีย์เลข<span>.</span>
+        <div className="header-brand">
+          <div className="logo">
+            <span className="brand-symbol">
+              <Keyboard size={23} />
+            </span>{" "}
+            คีย์เลข<span>.</span>
+          </div>
+          <button
+            className="header-user"
+            title={`${u.name} · ${u.role}`}
+            aria-label={`บัญชีของ ${u.name} (${u.role})`}
+            onClick={() => setPage("บัญชี")}
+          >
+            <strong>{u.name}</strong>
+            <small>{u.role}</small>
+          </button>
         </div>
-
         <nav>
           {menus[u.role].map((m) => {
             const Icon = icons[m];
@@ -1668,13 +1698,12 @@ export default function App() {
               )}
               {page === "บัญชี" && (
                 <>
-                  <section className="panel">
-                    <h2>{u.name}</h2>
-                    <p>
-                      {u.username} · {u.role}
-                    </p>
-                    <button onClick={password}>เปลี่ยนรหัสผ่าน</button>
-                  </section>
+                  <AccountProfile
+                    user={u}
+                    api={api}
+                    act={act}
+                    changePassword={password}
+                  />
                   {u.role === "Leader" && (
                     <Team state={state} act={act} modal={setModal} />
                   )}
@@ -1824,6 +1853,7 @@ function Team({ state, act, modal }) {
               {m.username} · {m.phone}
             </small>
           </div>
+          <UserPasswordAccess person={m} api={api} act={act} modal={modal} />
         </div>
       ))}
     </section>
@@ -1832,8 +1862,6 @@ function Team({ state, act, modal }) {
 function SettingsPage({ state, act, modal }) {
   const [adminTab, setAdminTab] = useState("leaders");
   const [search, setSearch] = useState("");
-  const [drawLottery, setDrawLottery] = useState("");
-  const [drawStatus, setDrawStatus] = useState("upcoming");
   const matchesSearch = (row) =>
     [row.name, row.username, row.phone, row.draw_date]
       .filter(Boolean)
@@ -1877,7 +1905,11 @@ function SettingsPage({ state, act, modal }) {
         <div className="admin-search">
           <input
             aria-label="ค้นหาในหมวดตั้งค่า"
-            placeholder="ค้นหาชื่อ ชื่อบัญชี หรือเบอร์โทร…"
+            placeholder={
+              adminTab === "leaders"
+                ? "ค้นหาชื่อ ชื่อบัญชี หรือเบอร์โทร…"
+                : "ค้นหาชื่อหวย หรือวันที่งวด…"
+            }
             value={search}
             onChange={(e) => setSearch(e.target.value)}
           />
@@ -1949,6 +1981,12 @@ function SettingsPage({ state, act, modal }) {
                       : "หมดอายุแล้ว"}
                 </span>
               </div>
+              <UserPasswordAccess
+                person={l}
+                api={api}
+                act={act}
+                modal={modal}
+              />
               <button
                 onClick={() =>
                   modal({
@@ -2007,253 +2045,16 @@ function SettingsPage({ state, act, modal }) {
           ))}
         </section>
       )}
-      {adminTab === "lotteries" && (
-        <section className="panel">
-          <div className="section-head">
-            <h2>ประเภทหวย</h2>
-            <button
-              onClick={() =>
-                modal({
-                  title: "เพิ่มประเภทหวย",
-                  content: (
-                    <Form
-                      fields={[
-                        { name: "name", label: "ชื่อหวย" },
-                        { name: "kind", label: "ชนิดหวย: หวยไทย หรือ หวยนอก" },
-                        { name: "flag", label: "ธง (emoji)", required: false },
-                      ]}
-                      onSubmit={(v) =>
-                        act(async () => {
-                          await api.post("/lotteries", v);
-                          modal(null);
-                        })
-                      }
-                    />
-                  ),
-                })
-              }
-            >
-              + เพิ่ม
-            </button>
-          </div>
-          {state.lotteries.filter(matchesSearch).map((l) => (
-            <div className="item" key={l.id}>
-              <strong>
-                <LotteryFlag flag={l.flag} /> {l.name}
-              </strong>
-              <span>{l.kind}</span>
-              <button
-                onClick={() =>
-                  act(() =>
-                    api.patch("/lotteries/" + l.id, { enabled: !l.enabled }),
-                  )
-                }
-              >
-                {l.enabled ? "เปิดอยู่ · กดปิด" : "ปิดอยู่ · กดเปิด"}
-              </button>
-              <button
-                onClick={() =>
-                  modal({
-                    title: "แก้ไข " + l.name,
-                    content: (
-                      <Form
-                        fields={[
-                          { name: "name", label: "ชื่อหวย", value: l.name },
-                          { name: "kind", label: "ชนิดหวย", value: l.kind },
-                          {
-                            name: "flag",
-                            label: "ธง",
-                            value: l.flag,
-                            required: false,
-                          },
-                        ]}
-                        onSubmit={(v) =>
-                          act(async () => {
-                            await api.put("/lotteries/" + l.id, v);
-                            modal(null);
-                          })
-                        }
-                      />
-                    ),
-                  })
-                }
-              >
-                แก้ไข
-              </button>
-              <button
-                onClick={() =>
-                  modal({
-                    title: "ลบประเภท " + l.name,
-                    content: <p>ลบได้เฉพาะประเภทที่ยังไม่มีงวด</p>,
-                    confirm: () =>
-                      act(async () => {
-                        await api.delete("/lotteries/" + l.id);
-                        modal(null);
-                      }),
-                  })
-                }
-              >
-                ลบ
-              </button>
-              <button
-                onClick={() =>
-                  modal({
-                    title: "เพิ่มงวด " + l.name,
-                    content: (
-                      <Form
-                        fields={[
-                          { name: "draw_date", label: "วันงวด", type: "date" },
-                          {
-                            name: "result_at",
-                            label: "เวลาเผยแพร่ผล",
-                            type: "datetime-local",
-                          },
-                        ]}
-                        onSubmit={(v) =>
-                          act(async () => {
-                            await api.post("/draws", {
-                              ...v,
-                              lottery_id: l.id,
-                            });
-                            modal(null);
-                          })
-                        }
-                      />
-                    ),
-                  })
-                }
-              >
-                + งวด
-              </button>
-            </div>
-          ))}
-        </section>
-      )}
-      {adminTab === "draws" && (
-        <section className="panel">
-          <h2>งวดและผลรางวัล</h2>
-          <div className="admin-draw-filters">
-            <select
-              aria-label="กรองประเภทหวย"
-              value={drawLottery}
-              onChange={(e) => setDrawLottery(e.target.value)}
-            >
-              <option value="">ทุกประเภทหวย</option>
-              {state.lotteries.map((lottery) => (
-                <option key={lottery.id} value={lottery.id}>
-                  {lottery.name}
-                </option>
-              ))}
-            </select>
-            <select
-              aria-label="กรองสถานะงวด"
-              value={drawStatus}
-              onChange={(e) => setDrawStatus(e.target.value)}
-            >
-              <option value="upcoming">งวดที่ยังไม่ออกผล</option>
-              <option value="past">งวดย้อนหลัง</option>
-              <option value="all">ทุกงวด</option>
-            </select>
-          </div>
-          {state.draws
-            .filter(matchesSearch)
-            .filter(
-              (d) =>
-                (!drawLottery || String(d.lottery_id) === drawLottery) &&
-                (drawStatus === "all" ||
-                  (drawStatus === "upcoming"
-                    ? new Date(d.result_at) > new Date()
-                    : new Date(d.result_at) <= new Date())),
-            )
-            .sort((a, b) => new Date(a.result_at) - new Date(b.result_at))
-            .map((d) => (
-              <div className="item" key={d.id}>
-                <span>
-                  {d.name} · {date(d.draw_date)}
-                </span>
-                <button
-                  onClick={() =>
-                    modal({
-                      title: "แก้ไขงวด",
-                      content: (
-                        <Form
-                          fields={[
-                            {
-                              name: "draw_date",
-                              label: "วันงวด",
-                              type: "date",
-                              value: String(d.draw_date).slice(0, 10),
-                            },
-                            {
-                              name: "result_at",
-                              label: "เวลาเผยแพร่ผล",
-                              type: "datetime-local",
-                              value: new Date(
-                                new Date(d.result_at).getTime() + 7 * 3600000,
-                              )
-                                .toISOString()
-                                .slice(0, 16),
-                            },
-                          ]}
-                          onSubmit={(v) =>
-                            act(async () => {
-                              await api.put("/draws/" + d.id, v);
-                              modal(null);
-                            })
-                          }
-                        />
-                      ),
-                    })
-                  }
-                >
-                  แก้ไขงวด
-                </button>
-                <button
-                  onClick={() =>
-                    modal({
-                      title: "ลบงวด " + d.name,
-                      content: <p>ลบได้เฉพาะงวดที่ยังไม่มีโพย</p>,
-                      confirm: () =>
-                        act(async () => {
-                          await api.delete("/draws/" + d.id);
-                          modal(null);
-                        }),
-                    })
-                  }
-                >
-                  ลบงวด
-                </button>
-                <button
-                  onClick={() =>
-                    modal({
-                      title: "ผล " + d.name,
-                      content: (
-                        <Form
-                          fields={[
-                            { name: "top3", label: "3 ตัวบน", value: d.top3 },
-                            { name: "top2", label: "2 ตัวบน", value: d.top2 },
-                            {
-                              name: "bottom2",
-                              label: "2 ตัวล่าง",
-                              value: d.bottom2,
-                            },
-                          ]}
-                          onSubmit={(v) =>
-                            act(async () => {
-                              await api.patch("/draws/" + d.id, v);
-                              modal(null);
-                            })
-                          }
-                        />
-                      ),
-                    })
-                  }
-                >
-                  บันทึกผล
-                </button>
-              </div>
-            ))}
-        </section>
+      {(adminTab === "lotteries" || adminTab === "draws") && (
+        <AdminLotterySettings
+          key={adminTab}
+          state={state}
+          api={api}
+          act={act}
+          modal={modal}
+          search={search}
+          mode={adminTab}
+        />
       )}
       {adminTab === "maintenance" && <MaintenancePanel act={act} api={api} />}
     </div>
@@ -2270,6 +2071,15 @@ function SettingsPage({ state, act, modal }) {
               <h2>
                 <LotteryFlag flag={l.flag} /> {l.name}
               </h2>
+              {(l.flag === "🇱🇦" ||
+                l.name.replace(/\s/g, "").includes("หวยลาว")) && (
+                <ExchangeSettings
+                  state={state}
+                  api={api}
+                  act={act}
+                  modal={modal}
+                />
+              )}
               <form
                 className="leader-rates-form"
                 onSubmit={(event) => {
@@ -2312,98 +2122,7 @@ function SettingsPage({ state, act, modal }) {
                   });
                 }}
               >
-                <div className="rate-explanation">
-                  <h3>อัตราจ่ายและวงเงินรับต่อเลข</h3>
-                  <p>
-                    วงเงินนับยอดรวมของสมาชิกทั้งเครือข่าย แยกตามเลข ประเภท
-                    และงวด
-                  </p>
-                  <p>
-                    เช่น 2 ตัวบนรับเลขละ 1,000 บาท: เลข 12 รับรวมได้ 1,000
-                    บาทในหนึ่งงวด เลขอื่นและ 2 ตัวล่างนับวงเงินแยกกัน
-                  </p>
-                </div>
-                {[
-                  ["2 ตัว", ["2top", "2bottom"]],
-                  ["3 ตัว", ["3top", "3tod"]],
-                  ["วิ่ง", ["runTop", "runBottom"]],
-                ].map(([group, types]) => (
-                  <fieldset className="rate-group" key={group}>
-                    <legend>{group}</legend>
-                    <div className="rate-type-grid">
-                      {types.map((type) => (
-                        <section className="rate-type-card" key={type}>
-                          <h4>{labels[type]}</h4>
-                          <label>
-                            อัตราจ่ายต่อ 1 บาท
-                            <input
-                              aria-label={
-                                labels[type] + " — อัตราจ่ายต่อ 1 บาท"
-                              }
-                              name={type}
-                              type="number"
-                              min="0"
-                              step="0.01"
-                              required
-                              defaultValue={c.rates[type]}
-                            />
-                          </label>
-                          <label>
-                            รับสูงสุดต่อเลขในหนึ่งงวด (บาท)
-                            <input
-                              aria-label={
-                                labels[type] +
-                                " — รับสูงสุดต่อเลขในหนึ่งงวด (บาท)"
-                              }
-                              name={"limit_" + type}
-                              type="number"
-                              min="0.01"
-                              step="0.01"
-                              required
-                              defaultValue={c.limits?.[type] ?? c.limit}
-                            />
-                          </label>
-                        </section>
-                      ))}
-                    </div>
-                  </fieldset>
-                ))}
-                <fieldset className="rate-group">
-                  <legend>กีบ (K) · 1 K = 1,000 กีบ</legend>
-                  <p>
-                    ซื้อ 1 K จ่ายกี่ K เช่น อัตรา 95 คือซื้อ 1,000 กีบ จ่าย
-                    95,000 กีบ · วงเงินกีบนับแยกจากบาท
-                  </p>
-                  <div className="rate-type-grid">
-                    {Object.keys(labels).map((type) => (
-                      <section className="rate-type-card" key={type}>
-                        <h4>{labels[type]}</h4>
-                        <label>
-                          อัตราจ่ายต่อ 1 K (จ่ายเป็น K)
-                          <input
-                            name={"lak_" + type}
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            required
-                            defaultValue={c.lak?.rates?.[type] ?? c.rates[type]}
-                          />
-                        </label>
-                        <label>
-                          รับสูงสุดต่อเลขในหนึ่งงวด (K)
-                          <input
-                            name={"lak_limit_" + type}
-                            type="number"
-                            min="0.01"
-                            step="0.01"
-                            required
-                            defaultValue={c.lak?.limits?.[type] ?? 1000}
-                          />
-                        </label>
-                      </section>
-                    ))}
-                  </div>
-                </fieldset>
+                <RateTable config={c} />
                 <button className="primary rate-save">
                   บันทึกอัตราจ่ายและวงเงิน
                 </button>

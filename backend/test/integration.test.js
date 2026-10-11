@@ -23,7 +23,7 @@ test(
       const raw = await r.text();
       let data;
       try { data = JSON.parse(raw); } catch { data = { error: raw }; }
-      return { status: r.status, data };
+      return { status: r.status, data, cacheControl: r.headers.get("cache-control") };
     }
     async function login(username, pw = password) {
       const r = await api("/login", null, { username, password: pw });
@@ -62,6 +62,14 @@ test(
           .status,
         200,
       );
+      assert.equal((await api("/report-exchange", a, { rate: 650 })).status, 403);
+      for (const rate of [0, -1, "650", null])
+        assert.equal((await api("/report-exchange", l, { rate })).status, 400);
+      assert.equal((await api("/report-exchange", l, { rate: 650 })).status, 200);
+      const exchange = (await api("/state", l)).data.exchangeRates;
+      assert.equal(exchange.length, 1);
+      assert.equal(Number(exchange[0].rate), 650);
+      assert.equal(Number(exchange[0].leader_id), Number(leader));
       const members = [];
       for (let n = 0; n < 2; n++) {
         r = await api("/users", l, {
@@ -76,6 +84,49 @@ test(
         assert.equal((await api("/users/" + id, l, { amount: 5000 }, "PATCH")).status, 403);
       }
       [member1, member2] = members.map((m) => m.id);
+      assert.equal((await api(`/users/${member1}/password`, members[0].token)).status, 403);
+      assert.equal((await api(`/users/${member1}/password`, a)).status, 403);
+      assert.equal((await api(`/users/${leader}/password`, l)).status, 403);
+      let viewed = await api(`/users/${member1}/password`, l);
+      assert.equal(viewed.status, 200);
+      assert.equal(viewed.cacheControl, "no-store");
+      assert.equal(viewed.data.password, password);
+      assert.equal((await api(`/users/${leader}/password`, a)).data.password, password);
+      const stored = (await q("SELECT password_cipher FROM users WHERE id=?", [member1]))[0].password_cipher;
+      assert.notEqual(stored, password);
+      const profile = (await api("/state", l)).data;
+      assert.equal(profile.user.password_cipher, undefined);
+      const beforeProfile = (await api("/me", members[0].token)).data;
+      const beforeHash = (await q("SELECT password FROM users WHERE id=?", [member1]))[0].password;
+      let editedProfile = await api("/me", members[0].token, { name: "  Updated member  ", phone: " 0801234567 ", role: "Admin", id: leader, active: false, username: "changed", password: "changed" }, "PATCH");
+      assert.equal(editedProfile.status, 200);
+      assert.equal(editedProfile.data.user.id, member1);
+      assert.equal(editedProfile.data.user.name, "Updated member");
+      assert.equal(editedProfile.data.user.phone, "0801234567");
+      assert.equal(editedProfile.data.user.role, "Member");
+      assert.equal(editedProfile.data.user.username, beforeProfile.username);
+      assert.equal(editedProfile.data.user.leader_id, leader);
+      assert.equal(editedProfile.data.user.active, 1);
+      assert.equal(editedProfile.data.user.password, undefined);
+      assert.equal(editedProfile.data.user.password_cipher, undefined);
+      assert.equal((await q("SELECT password FROM users WHERE id=?", [member1]))[0].password, beforeHash);
+      for (const body of [{name:" ",phone:""},{name:"x".repeat(151),phone:""},{name:"Valid",phone:"abc"}])
+        assert.equal((await api("/me", members[0].token, body, "PATCH")).status, 400);
+      assert.equal((await api("/me", l, {name:"Updated leader",phone:""},"PATCH")).status,200);
+      assert.equal((await api("/me",a,{name:"Updated admin",phone:"0809999999"},"PATCH")).status,200);
+      assert.equal((await api("/state",l)).data.users.find((user)=>user.id===member1).name,"Updated member");
+      assert.equal((await api("/state",a)).data.users.find((user)=>user.id===leader).name,"Updated leader");
+
+      assert.ok(profile.users.every((user) => user.password_cipher === undefined && user.password === undefined));
+      await q("UPDATE users SET password_cipher=NULL WHERE id=?", [member2]);
+      const legacy = await api(`/users/${member2}/password`, l);
+      assert.equal(legacy.data.available, false);
+      const member2Name = (await q("SELECT username FROM users WHERE id=?", [member2]))[0].username;
+      await login(member2Name);
+      viewed = await api(`/users/${member2}/password`, l);
+      assert.equal(viewed.data.password, password);
+      assert.equal((await api("/me", members[1].token)).data.must_change, 0);
+
       assert.equal((await api("/state", a)).data.accessExpiresAt, null);
       assert.equal((await api("/state", l)).data.accessExpiresAt, expires);
       assert.equal(
@@ -325,6 +376,31 @@ test(
         401,
         "leader expiry blocks entire team",
       );
+      await api("/users/" + leader, a, { expires_at: extended, active: true }, "PATCH");
+      assert.equal((await api(`/users/${member1}/reset-password`, members[0].token, {})).status, 403);
+      assert.equal((await api(`/users/${member1}/reset-password`, a, {})).status, 400);
+      assert.equal((await api(`/users/${leader}/reset-password`, l, {})).status, 400);
+      await q("UPDATE users SET leader_id=NULL WHERE id=?", [member2]);
+      assert.equal((await api(`/users/${member2}/password`, l)).status, 403);
+      assert.equal((await api(`/users/${member2}/reset-password`, l, {})).status, 400);
+      await q("UPDATE users SET leader_id=? WHERE id=?", [leader, member2]);
+      const resetMember = await api(`/users/${member1}/reset-password`, l, {});
+      assert.equal(resetMember.status, 200);
+      assert.ok(resetMember.data.password.length >= 8);
+      assert.equal((await api(`/users/${member1}/password`, l)).data.password, resetMember.data.password);
+      assert.notEqual((await api("/login", null, {username:resetMember.data.username,password})).status, 200);
+      const resetToken = await login(resetMember.data.username, resetMember.data.password);
+      assert.equal((await api("/state", resetToken)).status, 403);
+      assert.equal((await api("/password", resetToken, {current:resetMember.data.password,password})).status, 200);
+      const resetState = (await api("/state", resetToken)).data;
+      assert.equal(resetState.user.password, undefined);
+      assert.equal(resetState.user.password_cipher, undefined);
+      assert.equal((await api(`/users/${member1}/password`, l)).data.password, password);
+      assert.ok(resetState.users.every((user) => user.password === undefined));
+      const resetLeader = await api(`/users/${leader}/reset-password`, a, {});
+      assert.equal(resetLeader.status, 200);
+      const resetLeaderToken = await login(resetLeader.data.username, resetLeader.data.password);
+      assert.equal((await api("/state", resetLeaderToken)).status, 403);
     } finally {
       const memberIds = [member1, member2].filter(Boolean);
       if (memberIds.length) {

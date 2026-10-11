@@ -166,3 +166,97 @@ test("member and type reports isolate a draw and keep currencies separate", () =
   );
   assert.deepEqual(reportGroups(records, 3, "member"), []);
 });
+
+import { kipToBaht, convertedDrawTotals } from "./reports.js";
+
+test("exchange rates use actual kip per baht while purchases remain in K", () => {
+  assert.equal(kipToBaht(65, 650), 100);
+  assert.equal(kipToBaht(0.65, 650), 1);
+  for (const rate of [0, -1, undefined, Infinity, "bad"])
+    assert.equal(kipToBaht(65, rate), null);
+  const records = [
+    {
+      draw_id: 1,
+      status: "active",
+      leader_id: 1,
+      member_id: 2,
+      currency: "LAK",
+      items: [{ type: "2top", number: "12", amount: 65, rate: 95 }],
+    },
+    {
+      draw_id: 1,
+      status: "active",
+      leader_id: 3,
+      member_id: 4,
+      currency: "LAK",
+      items: [{ type: "2top", number: "12", amount: 80, rate: 95 }],
+    },
+    {
+      draw_id: 1,
+      status: "active",
+      leader_id: 1,
+      member_id: 2,
+      items: [{ type: "2top", number: "12", amount: 50, rate: 95 }],
+    },
+  ];
+  const rates = [
+    { leader_id: 1, rate: 650 },
+    { leader_id: 3, rate: 800 },
+  ];
+  assert.deepEqual(convertedDrawTotals(records, 1, rates), {
+    lakInTHB: 200,
+    totalTHB: 250,
+  });
+  const members = reportGroups(records, 1, "member", [], rates);
+  assert.equal(members[0].LAK, 65);
+  assert.equal(members[0].lakInTHB, 100);
+  assert.equal(members[0].totalTHB, 150);
+  const type = reportGroups(records, 1, "type", [], rates)[2];
+  assert.equal(type.totalTHB, 250);
+  const winning = forecastReport(records, 1, "top", "00", rates).rows[112];
+  assert.equal(winning.lakPaidInTHB, 19000);
+  assert.equal(winning.lakProfitInTHB, -18800);
+  assert.equal(winning.totalProfitTHB, 250 - 19000 - 4750);
+  assert.equal(
+    convertedDrawTotals(records, 1, [{ leader_id: 1, rate: 650 }]).totalTHB,
+    null,
+  );
+  assert.equal(reportGroups(records, 1, "member", [], [])[0].totalTHB, null);
+  assert.equal(
+    forecastReport(records, 1, "top", "00", []).rows[112].totalProfitTHB,
+    null,
+  );
+  assert.deepEqual(convertedDrawTotals([], 1, []), {
+    lakInTHB: 0,
+    totalTHB: 0,
+  });
+});
+
+test("changing report exchange rates never changes native purchases or winnings", () => {
+  const bills = [
+    {
+      draw_id: 1,
+      leader_id: 1,
+      member_id: 2,
+      status: "active",
+      currency: "LAK",
+      items: [{ type: "2top", number: "12", amount: 65, rate: 95 }],
+    },
+  ];
+  const original = structuredClone(bills);
+  const first = forecastReport(bills, 1, "top", "00", [
+    { leader_id: 1, rate: 650 },
+  ]);
+  const second = forecastReport(bills, 1, "top", "00", [
+    { leader_id: 1, rate: 1000 },
+  ]);
+  assert.deepEqual(first.purchase, second.purchase);
+  assert.deepEqual(first.received, second.received);
+  assert.deepEqual(first.rows[112].payout, second.rows[112].payout);
+  assert.equal(first.rows[112].LAK, second.rows[112].LAK);
+  assert.notEqual(
+    first.convertedReceived.lakInTHB,
+    second.convertedReceived.lakInTHB,
+  );
+  assert.deepEqual(bills, original);
+});
