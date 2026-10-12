@@ -63,7 +63,8 @@ export function DrawEditor({ lotteries, lotteryId, draw, onSave }) {
   );
   const [resultDate, setResultDate] = useState(existing.slice(0, 10));
   const [manualDate, setManualDate] = useState(Boolean(draw));
-  const [time, setTime] = useState(existing.slice(11, 16));
+  const [hour, setHour] = useState(existing.slice(11, 13));
+  const [minute, setMinute] = useState(existing.slice(14, 16));
   return (
     <form
       className="admin-edit-form"
@@ -73,7 +74,7 @@ export function DrawEditor({ lotteries, lotteryId, draw, onSave }) {
         onSave({
           lottery_id: draw?.lottery_id || Number(v.lottery_id),
           draw_date: drawDate,
-          result_at: `${resultDate}T${time}`,
+          result_at: `${resultDate}T${hour.padStart(2, "0")}:${minute.padStart(2, "0")}`,
         });
       }}
     >
@@ -132,17 +133,54 @@ export function DrawEditor({ lotteries, lotteryId, draw, onSave }) {
               }}
             />
           </label>
-          <label>
-            เวลาเผยแพร่
-            <input
-              aria-label="เวลาเผยแพร่ผล"
-              type="time"
-              required
-              value={time}
-              onInput={(e) => setTime(e.currentTarget.value)}
-              onChange={(e) => setTime(e.target.value)}
-            />
-          </label>
+          <div className="admin-release-time">
+            <span>เวลาเผยแพร่ (24 ชั่วโมง)</span>
+            <div className="admin-release-time-inputs">
+              <label>
+                ชั่วโมง
+                <input
+                  aria-label="ชั่วโมงเผยแพร่ผล"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="([01]?[0-9]|2[0-3])"
+                  maxLength={2}
+                  placeholder="18"
+                  title="กรอกชั่วโมง 0–23"
+                  required
+                  value={hour}
+                  onChange={(e) =>
+                    setHour(e.target.value.replace(/\D/g, "").slice(0, 2))
+                  }
+                  onBlur={() =>
+                    setHour((value) => (value ? value.padStart(2, "0") : ""))
+                  }
+                />
+              </label>
+              <span className="admin-time-colon" aria-hidden="true">
+                :
+              </span>
+              <label>
+                นาที
+                <input
+                  aria-label="นาทีเผยแพร่ผล"
+                  type="text"
+                  inputMode="numeric"
+                  pattern="[0-5]?[0-9]"
+                  maxLength={2}
+                  placeholder="30"
+                  title="กรอกนาที 0–59"
+                  required
+                  value={minute}
+                  onChange={(e) =>
+                    setMinute(e.target.value.replace(/\D/g, "").slice(0, 2))
+                  }
+                  onBlur={() =>
+                    setMinute((value) => (value ? value.padStart(2, "0") : ""))
+                  }
+                />
+              </label>
+            </div>
+          </div>
         </div>
         <p className="muted">
           วันที่เผยแพร่ตามวันที่งวดโดยอัตโนมัติ เปลี่ยนเองได้ · เวลาไทย

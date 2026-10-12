@@ -9,6 +9,7 @@ import {
   convertedDrawTotals,
 } from "./reports.js";
 import WinningReport from "./WinningReport.jsx";
+import DailyPerformance from "./DailyPerformance.jsx";
 import { resultColumns } from "./draws.js";
 
 const money = (n) =>
@@ -31,6 +32,9 @@ export default function DrawReports({ state, bills }) {
   const [type, setType] = useState("");
   const [sort, setSort] = useState("payout");
   const [search, setSearch] = useState("");
+  const [limits, setLimits] = useState({ THB: "", LAK: "" });
+  const [onlyOverLimit, setOnlyOverLimit] = useState(false);
+  const limit = limits[currency] === "" ? null : Number(limits[currency]);
   const [draft, setDraft] = useState({ top3: "", top2: "", bottom2: "" });
   const [simulation, setSimulation] = useState(null);
   const draws = [...state.draws].sort(
@@ -79,12 +83,13 @@ export default function DrawReports({ state, bills }) {
     state.exchangeRates || [],
   );
   const allExposures = numberExposure(bills, draw?.id, currency);
-  const highest = [...allExposures].sort((a, b) => b.payout - a.payout)[0];
-  const overRevenue = allExposures.filter(
-    (r) => r.payout > purchased[currency],
-  );
   const exposures = allExposures
-    .filter((r) => (!type || r.type === type) && r.number.includes(search))
+    .filter(
+      (r) =>
+        (!type || r.type === type) &&
+        r.number.includes(search) &&
+        (!onlyOverLimit || limit === null || r.payout > limit),
+    )
     .sort((a, b) => b[sort] - a[sort] || a.number.localeCompare(b.number));
   const members = reportGroups(
     bills,
@@ -159,6 +164,9 @@ export default function DrawReports({ state, bills }) {
           ["winners", "บิลที่ถูกรางวัล"],
           ["simulation", "ลองใส่ผลหวย"],
           ["member", "ยอดซื้อรายสมาชิก"],
+          ...(state.user.role === "Leader"
+            ? [["daily", "สรุปผลประกอบการรายวัน"]]
+            : []),
         ].map(([key, label]) => (
           <button
             key={key}
@@ -171,52 +179,54 @@ export default function DrawReports({ state, bills }) {
           </button>
         ))}
       </div>
-      <div className="report-draw-picker risk-draw-picker">
-        <label>
-          1. ประเภทหวย
-          <select
-            value={lottery?.id || ""}
-            onChange={(e) => {
-              setLotteryId(e.target.value);
-              setDrawId("");
-              setSimulation(null);
-              setDraft({ top3: "", top2: "", bottom2: "" });
-            }}
-          >
-            {!state.lotteries.length && (
-              <option value="">ไม่มีประเภทหวย</option>
-            )}
-            {state.lotteries.map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          2. งวด
-          <select
-            value={draw?.id || ""}
-            onChange={(e) => {
-              setDrawId(e.target.value);
-              setSimulation(null);
-              setDraft({ top3: "", top2: "", bottom2: "" });
-            }}
-          >
-            {!lotteryDraws.length && <option value="">ยังไม่มีงวด</option>}
-            {lotteryDraws.map((d) => (
-              <option key={d.id} value={d.id}>
-                {date(d.draw_date)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <span className="risk-picker-note">
-          รายงานทั้งหมดด้านล่างใช้ {lottery?.name || "—"} · งวด{" "}
-          {draw ? date(draw.draw_date) : "—"}
-        </span>
-      </div>
-      {tab !== "numbers" && (
+      {tab !== "daily" && (
+        <div className="report-draw-picker risk-draw-picker">
+          <label>
+            1. ประเภทหวย
+            <select
+              value={lottery?.id || ""}
+              onChange={(e) => {
+                setLotteryId(e.target.value);
+                setDrawId("");
+                setSimulation(null);
+                setDraft({ top3: "", top2: "", bottom2: "" });
+              }}
+            >
+              {!state.lotteries.length && (
+                <option value="">ไม่มีประเภทหวย</option>
+              )}
+              {state.lotteries.map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            2. งวด
+            <select
+              value={draw?.id || ""}
+              onChange={(e) => {
+                setDrawId(e.target.value);
+                setSimulation(null);
+                setDraft({ top3: "", top2: "", bottom2: "" });
+              }}
+            >
+              {!lotteryDraws.length && <option value="">ยังไม่มีงวด</option>}
+              {lotteryDraws.map((d) => (
+                <option key={d.id} value={d.id}>
+                  {date(d.draw_date)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <span className="risk-picker-note">
+            รายงานทั้งหมดด้านล่างใช้ {lottery?.name || "—"} · งวด{" "}
+            {draw ? date(draw.draw_date) : "—"}
+          </span>
+        </div>
+      )}
+      {tab !== "numbers" && tab !== "daily" && (
         <>
           <div className="report-metrics">
             <div>
@@ -244,49 +254,16 @@ export default function DrawReports({ state, bills }) {
         </>
       )}
       <div className="report-tab-content" role="tabpanel">
-        {!draw ? (
+        {tab === "daily" ? (
+          <DailyPerformance state={state} />
+        ) : !draw ? (
           <p>ยังไม่มีงวดหวย</p>
         ) : tab === "numbers" ? (
           <>
-            <div className="risk-section-title">
-              <div>
-                <span className="risk-kicker">
-                  ภาระจ่ายหากเลขถูก · ดูได้ก่อนออกผล
-                </span>
-                <h3>เลขไหนต้องเฝ้าดูมากที่สุด</h3>
-              </div>
-              <span className="risk-live">อัปเดตเมื่อมีโพยใหม่</span>
-            </div>
-            <div className="risk-cards">
-              <div className="risk-card risk-card-danger">
-                <span>เลขที่มีภาระจ่ายสูงสุด · {unit}</span>
-                <strong>
-                  {highest
-                    ? `${highest.number} · ${labels[highest.type]}`
-                    : "ยังไม่มีรายการซื้อ"}
-                </strong>
-                <b>{highest ? `${money(highest.payout)} ${unit}` : "—"}</b>
-                <small>เงินที่ต้องจ่ายเฉพาะเลขและประเภทนี้</small>
-              </div>
-              <div className="risk-card">
-                <span>ยอดซื้อรวมของงวด · {unit}</span>
-                <strong>
-                  {money(purchased[currency])} <small>{unit}</small>
-                </strong>
-                <small>ยอดเงินจริงทุกประเภท ก่อนจ่ายรางวัล</small>
-              </div>
-              <div className="risk-card risk-card-warning">
-                <span>เลขที่จ่ายเกินยอดซื้อทั้งงวด</span>
-                <strong>
-                  {overRevenue.length} <small>เลข / ประเภท</small>
-                </strong>
-                <small>เฉพาะภาระของเลขนั้นก็เกินยอดซื้อรวมแล้ว</small>
-              </div>
-            </div>
             <div className="risk-filter-title">
               กรองตารางความเสี่ยง{" "}
               <small>
-                ประเภทเลขและคำค้นใช้เฉพาะตาราง · สกุลเงินใช้ทั้งการ์ดและตาราง
+                กรอกวงเงินที่รับได้ เพื่อดูส่วนต่างและเลขที่ต้องจ่ายเกินวงเงิน
               </small>
             </div>
             <div className="toolbar report-controls">
@@ -328,6 +305,39 @@ export default function DrawReports({ state, bills }) {
                   <option value="count">จำนวนรายการซื้อ</option>
                 </select>
               </label>
+              <label>
+                วงเงินที่รับได้ ({unit})
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  inputMode="decimal"
+                  value={limits[currency]}
+                  placeholder="เช่น 100000"
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    if (
+                      value === "" ||
+                      (Number.isFinite(Number(value)) && Number(value) >= 0)
+                    )
+                      setLimits((current) => ({
+                        ...current,
+                        [currency]: value,
+                      }));
+                  }}
+                />
+              </label>
+              <label>
+                แสดงรายการ
+                <select
+                  value={onlyOverLimit ? "over" : "all"}
+                  onChange={(e) => setOnlyOverLimit(e.target.value === "over")}
+                  disabled={limit === null}
+                >
+                  <option value="all">ทุกเลข</option>
+                  <option value="over">เฉพาะเลขที่เกินวงเงิน</option>
+                </select>
+              </label>
             </div>
             <p className="muted">
               เลขโต๊ดที่สลับหลักกันรวมเป็นชุดเดียว เพราะถูกพร้อมกัน
@@ -342,6 +352,7 @@ export default function DrawReports({ state, bills }) {
                     <th className="risk-payout-cell">
                       ต้องจ่ายหากถูก ({unit})
                     </th>
+                    <th>วงเงิน − ต้องจ่ายหากถูก ({unit})</th>
                     <th>ยอดซื้อเลขนี้ ({unit})</th>
                     <th>รายการซื้อ</th>
                     <th>จ่ายเกินยอดซื้อทั้งงวด ({unit})</th>
@@ -352,7 +363,13 @@ export default function DrawReports({ state, bills }) {
                     <tr
                       key={r.key}
                       className={
-                        r.payout > purchased[currency] ? "risk-row-danger" : ""
+                        (
+                          limit === null
+                            ? r.payout > purchased[currency]
+                            : r.payout > limit
+                        )
+                          ? "risk-row-danger"
+                          : ""
                       }
                     >
                       <td>{index + 1}</td>
@@ -361,6 +378,17 @@ export default function DrawReports({ state, bills }) {
                       </td>
                       <td>{labels[r.type]}</td>
                       <td className="risk-payout-cell">{money(r.payout)}</td>
+                      <td
+                        className={
+                          limit !== null && r.payout > limit
+                            ? "report-loss"
+                            : ""
+                        }
+                      >
+                        {limit === null
+                          ? "—"
+                          : money(Math.round((limit - r.payout) * 100) / 100)}
+                      </td>
                       <td>{money(r.amount)}</td>
                       <td>{r.count}</td>
                       <td
@@ -384,11 +412,16 @@ export default function DrawReports({ state, bills }) {
                 </strong>
                 <p>
                   {allExposures.length
-                    ? "ลองเปลี่ยนประเภทเลขหรือคำค้นหา"
+                    ? "ลองเปลี่ยนประเภทเลข คำค้นหา หรือวงเงิน"
                     : "เมื่อสมาชิกส่งโพย เลขและภาระจ่ายจะปรากฏที่นี่"}
                 </p>
               </div>
             )}
+            <p className="muted">
+              ส่วนต่างวงเงิน = วงเงินที่รับได้ − ต้องจ่ายหากถูก ·
+              ค่าติดลบคือจำนวนที่เกินวงเงิน เช่น วงเงิน 100,000 ต้องจ่าย 120,000
+              แสดง −20,000
+            </p>
             <p className="muted">
               จ่ายเกินยอดซื้อทั้งงวด = เงินรางวัลของเลขนี้ −
               ยอดซื้อรวมทุกประเภทในสกุลเงินเดียวกัน (ถ้าไม่เกินแสดง 0)

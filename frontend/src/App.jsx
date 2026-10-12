@@ -1,3 +1,4 @@
+import Bill from "./BillCard.jsx";
 import AccountProfile from "./AccountProfile.jsx";
 import PasswordInput from "./PasswordInput.jsx";
 import AdminLotterySettings, { ResultEditor } from "./AdminLotterySettings.jsx";
@@ -11,7 +12,7 @@ import Statistics from "./Statistics.jsx";
 import MaintenancePanel from "./MaintenancePanel.jsx";
 import LotteryFlag from "./LotteryFlag.jsx";
 import ResultGrid from "./ResultGrid.jsx";
-import { billResultStatus, filterResultBills } from "./billResults.js";
+import { filterResultBills } from "./billResults.js";
 import { laoReceiptDate } from "./receipt.js";
 import {
   Sun,
@@ -648,6 +649,30 @@ export default function App() {
       </div>
     );
   if (!u) return <div className="loading">กำลังโหลด คีย์เลข…</div>;
+  const visibleBills =
+    page === "โพย"
+      ? filterResultBills(
+          (state.bills || []).filter(
+            (b) =>
+              (!billLotteryId ||
+                String(
+                  state.draws.find((d) => d.id === b.draw_id)?.lottery_id,
+                ) === billLotteryId) &&
+              (!filter.startsWith("d") || "d" + b.draw_id === filter) &&
+              (u.role !== "Leader" ||
+                !memberFilter ||
+                String(b.member_id) === memberFilter),
+          ),
+          state.draws,
+          {
+            status: billResultFilter,
+            currency: prizeCurrency,
+            sort: prizeSort,
+            now: tick,
+          },
+        )
+      : [];
+
   return (
     <div className="shell">
       <div className="topbar">
@@ -1642,6 +1667,18 @@ export default function App() {
                 ))}
               {page === "โพย" && (
                 <>
+                  <div className="bill-page-heading">
+                    <div>
+                      <span className="report-eyebrow">รายการซื้อ</span>
+                      <h2>โพยของ{u.role === "Leader" ? "สมาชิก" : "ฉัน"}</h2>
+                      <p className="muted">
+                        เลือกงวดและสถานะ แล้วเปิดโพยเพื่อดูรายละเอียดแต่ละรายการ
+                      </p>
+                    </div>
+                    <span className="bill-count">
+                      {visibleBills.length} โพย
+                    </span>
+                  </div>
                   <div className="bill-result-filters bill-filters-compact">
                     <label>
                       ประเภทหวย
@@ -1738,28 +1775,7 @@ export default function App() {
                     </label>
                   </div>
                   <section className="bill-list">
-                    {filterResultBills(
-                      (state.bills || []).filter(
-                        (b) =>
-                          (!billLotteryId ||
-                            String(
-                              state.draws.find((d) => d.id === b.draw_id)
-                                ?.lottery_id,
-                            ) === billLotteryId) &&
-                          (!filter.startsWith("d") ||
-                            "d" + b.draw_id === filter) &&
-                          (u.role !== "Leader" ||
-                            !memberFilter ||
-                            String(b.member_id) === memberFilter),
-                      ),
-                      state.draws,
-                      {
-                        status: billResultFilter,
-                        currency: prizeCurrency,
-                        sort: prizeSort,
-                        now: tick,
-                      },
-                    ).map((b) => (
+                    {visibleBills.map((b) => (
                       <Bill
                         key={b.id}
                         b={b}
@@ -1780,28 +1796,9 @@ export default function App() {
                         }
                       />
                     ))}
-                    {!filterResultBills(
-                      (state.bills || []).filter(
-                        (b) =>
-                          (!billLotteryId ||
-                            String(
-                              state.draws.find((d) => d.id === b.draw_id)
-                                ?.lottery_id,
-                            ) === billLotteryId) &&
-                          (!filter.startsWith("d") ||
-                            "d" + b.draw_id === filter) &&
-                          (u.role !== "Leader" ||
-                            !memberFilter ||
-                            String(b.member_id) === memberFilter),
-                      ),
-                      state.draws,
-                      {
-                        status: billResultFilter,
-                        currency: prizeCurrency,
-                        sort: prizeSort,
-                        now: tick,
-                      },
-                    ).length && <Empty text="ไม่มีบิลตรงกับตัวกรอง" />}
+                    {!visibleBills.length && (
+                      <Empty text="ไม่มีโพยตรงกับตัวกรอง ลองเปลี่ยนหวย งวด หรือสกุลเงิน" />
+                    )}
                   </section>
                 </>
               )}
@@ -1881,76 +1878,6 @@ function Empty({ text }) {
       <Receipt size={32} />
       <p>{text}</p>
     </div>
-  );
-}
-function Bill({ b, state, cancel, edit }) {
-  const d = state.draws.find((d) => d.id === b.draw_id);
-  const setting = state.drawSettings?.find(
-    (s) => s.draw_id === b.draw_id,
-  )?.config;
-  const editable =
-    setting?.closeAt &&
-    Date.now() <
-      Math.min(
-        new Date(setting.closeAt).getTime(),
-        new Date(d?.result_at).getTime(),
-      );
-  const result = billResultStatus(b, d);
-  const statusText = {
-    won: "ถูกรางวัล",
-    lost: "ไม่ถูกรางวัล",
-    pending: "ยังไม่ออกผล",
-    cancelled: "ยกเลิกแล้ว",
-  }[result];
-  return (
-    <details className={`bill bill-card bill-${result}`}>
-      <summary>
-        <div className="bill-card-info">
-          <strong>#{String(b.id).padStart(5, "0")}</strong>
-          <span>
-            {d?.name} · งวด {date(d?.draw_date)}
-          </span>
-          <small>{b.member_name || "บิลของคุณ"}</small>
-        </div>
-        <div className="bill-card-amount">
-          <small>ยอดซื้อ</small>
-          <b>{amountText(b.gross, currencyOf(b))}</b>
-        </div>
-        <div className="bill-card-result">
-          <span className={`bill-status bill-status-${result}`}>
-            {statusText}
-          </span>
-          {result === "won" && (
-            <strong>{amountText(b.win, currencyOf(b))}</strong>
-          )}
-          <small>กดดูรายการในบิล</small>
-        </div>
-      </summary>
-      {b.items.map((i, index) => (
-        <div className="item" key={index}>
-          <strong>{i.number}</strong>
-          <span>{labels[i.type]}</span>
-          <span>
-            {amountText(i.amount, currencyOf(b))} · จ่าย {i.rate}
-          </span>
-        </div>
-      ))}
-      <p>ยอดรวม {amountText(b.gross, currencyOf(b))}</p>
-      <p>
-        {result === "won"
-          ? "ถูกรางวัล " + amountText(b.win, currencyOf(b))
-          : statusText}{" "}
-        · {b.note || "ไม่มีหมายเหตุ"}
-      </p>
-      {edit && editable && b.status === "active" && (
-        <button onClick={edit}>แก้ไขโพย</button>
-      )}
-      {cancel && editable && b.status === "active" && (
-        <button onClick={cancel}>
-          <Trash2 size={16} /> ยกเลิกโพย
-        </button>
-      )}
-    </details>
   );
 }
 function Team({ state, act, modal }) {
