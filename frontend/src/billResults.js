@@ -21,13 +21,10 @@ export function filterResultBills(
     now = Date.now(),
   } = {},
 ) {
+  const drawsById = new Map(draws.map((draw) => [String(draw.id), draw]));
   return bills
     .filter((b) => {
-      const result = billResultStatus(
-        b,
-        draws.find((d) => d.id === b.draw_id),
-        now,
-      );
+      const result = billResultStatus(b, drawsById.get(String(b.draw_id)), now);
       const unit = b.currency || b.items?.[0]?.currency || "THB";
       return (
         (!status || status === result) &&
@@ -43,4 +40,17 @@ export function filterResultBills(
         ? Number(b.win || 0) - Number(a.win || 0) || b.id - a.id
         : b.id - a.id,
     );
+}
+
+export function paginateBills(bills, requestedPage = 1, pageSize = 25) {
+  const totalPages = Math.max(1, Math.ceil(bills.length / pageSize));
+  const page = Math.max(1, Math.min(requestedPage, totalPages));
+  const offset = (page - 1) * pageSize;
+  return {
+    page,
+    totalPages,
+    start: bills.length ? offset + 1 : 0,
+    end: Math.min(offset + pageSize, bills.length),
+    rows: bills.slice(offset, offset + pageSize),
+  };
 }

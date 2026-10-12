@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import { ChevronDown, UserRound, Trash2, Pencil } from "lucide-react";
 import LotteryFlag from "./LotteryFlag.jsx";
 import { labels } from "./keying.js";
@@ -10,6 +10,7 @@ const money = (n) =>
     maximumFractionDigits: 2,
   });
 export default function BillCard({ b, state, cancel, edit }) {
+  const [expanded, setExpanded] = useState(false);
   const draw = state.draws.find((d) => String(d.id) === String(b.draw_id));
   const setting = state.drawSettings?.find(
     (s) => String(s.draw_id) === String(b.draw_id),
@@ -47,7 +48,10 @@ export default function BillCard({ b, state, cancel, edit }) {
       })
     : "";
   return (
-    <details className={`bill bill-card bill-${result}`}>
+    <details
+      className={`bill bill-card bill-${result}`}
+      onToggle={(e) => setExpanded(e.currentTarget.open)}
+    >
       <summary>
         <div className="bill-card-info">
           <div className="bill-card-meta">
@@ -95,69 +99,71 @@ export default function BillCard({ b, state, cancel, edit }) {
           <small>รายละเอียด</small>
         </span>
       </summary>
-      <div className="bill-details">
-        <div className="bill-detail-heading">
-          <h3>รายการเลขในโพย</h3>
-          <span>
-            {created ? `บันทึก ${created}` : `${b.items.length} รายการ`}
-          </span>
-        </div>
-        <div className="bill-items-scroll">
-          <table className="bill-items-table">
-            <thead>
-              <tr>
-                <th>เลข</th>
-                <th>ประเภท</th>
-                <th>ยอดซื้อ ({unit})</th>
-                <th>อัตราจ่าย</th>
-              </tr>
-            </thead>
-            <tbody>
-              {b.items.map((item, index) => (
-                <tr key={index}>
-                  <td>
-                    <b className="bill-number">{item.number}</b>
-                  </td>
-                  <td>{labels[item.type] || item.type}</td>
-                  <td>{money(item.amount)}</td>
-                  <td>
-                    {money(item.rate)} <small>ต่อ 1 {unit}</small>
-                  </td>
+      {expanded && (
+        <div className="bill-details">
+          <div className="bill-detail-heading">
+            <h3>รายการเลขในโพย</h3>
+            <span>
+              {created ? `บันทึก ${created}` : `${b.items.length} รายการ`}
+            </span>
+          </div>
+          <div className="bill-items-scroll">
+            <table className="bill-items-table">
+              <thead>
+                <tr>
+                  <th>เลข</th>
+                  <th>ประเภท</th>
+                  <th>ยอดซื้อ ({unit})</th>
+                  <th>อัตราจ่าย</th>
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <th colSpan={2}>ยอดรวม</th>
-                <td>{money(b.gross)}</td>
-                <td>{unit}</td>
-              </tr>
-            </tfoot>
-          </table>
+              </thead>
+              <tbody>
+                {b.items.map((item, index) => (
+                  <tr key={index}>
+                    <td>
+                      <b className="bill-number">{item.number}</b>
+                    </td>
+                    <td>{labels[item.type] || item.type}</td>
+                    <td>{money(item.amount)}</td>
+                    <td>
+                      {money(item.rate)} <small>ต่อ 1 {unit}</small>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <th colSpan={2}>ยอดรวม</th>
+                  <td>{money(b.gross)}</td>
+                  <td>{unit}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+          {b.note && (
+            <div className="bill-note">
+              <span>หมายเหตุ</span>
+              <p>{b.note}</p>
+            </div>
+          )}
+          {editable && b.status === "active" && (edit || cancel) && (
+            <div className="bill-actions">
+              {edit && (
+                <button onClick={edit}>
+                  <Pencil size={14} />
+                  แก้ไขโพย
+                </button>
+              )}
+              {cancel && (
+                <button className="bill-cancel-action" onClick={cancel}>
+                  <Trash2 size={14} />
+                  ยกเลิกโพย
+                </button>
+              )}
+            </div>
+          )}
         </div>
-        {b.note && (
-          <div className="bill-note">
-            <span>หมายเหตุ</span>
-            <p>{b.note}</p>
-          </div>
-        )}
-        {editable && b.status === "active" && (edit || cancel) && (
-          <div className="bill-actions">
-            {edit && (
-              <button onClick={edit}>
-                <Pencil size={14} />
-                แก้ไขโพย
-              </button>
-            )}
-            {cancel && (
-              <button className="bill-cancel-action" onClick={cancel}>
-                <Trash2 size={14} />
-                ยกเลิกโพย
-              </button>
-            )}
-          </div>
-        )}
-      </div>
+      )}
     </details>
   );
 }

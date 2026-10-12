@@ -1,4 +1,5 @@
 import Bill from "./BillCard.jsx";
+import BillPages from "./BillPages.jsx";
 import AccountProfile from "./AccountProfile.jsx";
 import PasswordInput from "./PasswordInput.jsx";
 import AdminLotterySettings, { ResultEditor } from "./AdminLotterySettings.jsx";
@@ -1774,8 +1775,20 @@ export default function App() {
                       </select>
                     </label>
                   </div>
-                  <section className="bill-list">
-                    {visibleBills.map((b) => (
+                  <BillPages
+                    key={JSON.stringify([
+                      billLotteryId,
+                      filter,
+                      memberFilter,
+                      billResultFilter,
+                      prizeCurrency,
+                      prizeSort,
+                    ])}
+                    bills={visibleBills}
+                    empty={
+                      <Empty text="ไม่มีโพยตรงกับตัวกรอง ลองเปลี่ยนหวย งวด หรือสกุลเงิน" />
+                    }
+                    renderBill={(b) => (
                       <Bill
                         key={b.id}
                         b={b}
@@ -1795,11 +1808,8 @@ export default function App() {
                             : null
                         }
                       />
-                    ))}
-                    {!visibleBills.length && (
-                      <Empty text="ไม่มีโพยตรงกับตัวกรอง ลองเปลี่ยนหวย งวด หรือสกุลเงิน" />
                     )}
-                  </section>
+                  />
                 </>
               )}
               {page === "สถิติ" && (
