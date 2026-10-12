@@ -1,6 +1,6 @@
 import AccountProfile from "./AccountProfile.jsx";
 import PasswordInput from "./PasswordInput.jsx";
-import AdminLotterySettings from "./AdminLotterySettings.jsx";
+import AdminLotterySettings, { ResultEditor } from "./AdminLotterySettings.jsx";
 import UserPasswordAccess from "./UserPasswordAccess.jsx";
 import { ExchangeSettings, RateTable } from "./LeaderRates.jsx";
 import React, { useState, useEffect, useRef } from "react";
@@ -11,6 +11,7 @@ import Statistics from "./Statistics.jsx";
 import MaintenancePanel from "./MaintenancePanel.jsx";
 import LotteryFlag from "./LotteryFlag.jsx";
 import ResultGrid from "./ResultGrid.jsx";
+import { billResultStatus, filterResultBills } from "./billResults.js";
 import { laoReceiptDate } from "./receipt.js";
 import {
   Sun,
@@ -139,6 +140,10 @@ export default function App() {
     [state, setState] = useState(null),
     [page, setPage] = useState("ผล"),
     [modal, setModal] = useState(null),
+    [billResultFilter, setBillStatusFilter] = useState(""),
+    [billLotteryId, setBillLotteryId] = useState(""),
+    [prizeCurrency, setPrizeCurrency] = useState(""),
+    [prizeSort, setPrizeSort] = useState("latest"),
     [busy, setBusy] = useState(false),
     [drawId, setDrawId] = useState(""),
     [currency, setCurrency] = useState("THB"),
@@ -768,6 +773,24 @@ export default function App() {
                   {filters}
 
                   <ResultGrid
+                    isAdmin={u.role === "Admin"}
+                    onEdit={(d) => {
+                      if (u.role !== "Admin") return;
+                      setModal({
+                        title: `${d.top3 ? "แก้ไขผล" : "กรอกผล"} ${d.name}`,
+                        content: (
+                          <ResultEditor
+                            draw={d}
+                            onSave={(values) =>
+                              act(async () => {
+                                await api.patch(`/draws/${d.id}`, values);
+                                setModal(null);
+                              })
+                            }
+                          />
+                        ),
+                      });
+                    }}
                     draws={state.draws}
                     lotteries={state.lotteries || []}
                     now={tick}
@@ -1619,35 +1642,166 @@ export default function App() {
                 ))}
               {page === "โพย" && (
                 <>
-                  {filters}
-
-                  <section className="panel">
-                    {scopedBills
-                      .filter((b) => !filter || "d" + b.draw_id === filter)
-                      .slice()
-                      .reverse()
-                      .map((b) => (
-                        <Bill
-                          key={b.id}
-                          b={b}
-                          state={state}
-                          edit={u.role === "Member" ? () => editBill(b) : null}
-                          cancel={
-                            u.role === "Member"
-                              ? () =>
-                                  setModal({
-                                    title: "ยืนยันยกเลิกโพย #" + b.id,
-                                    confirm: () =>
-                                      act(async () => {
-                                        await api.delete("/bills/" + b.id);
-                                        setModal(null);
-                                      }),
-                                  })
-                              : null
-                          }
-                        />
-                      ))}
-                    {!state.bills.length && <Empty text="ยังไม่มีโพยที่ส่ง" />}
+                  <div className="bill-result-filters bill-filters-compact">
+                    <label>
+                      ประเภทหวย
+                      <select
+                        value={billLotteryId}
+                        onChange={(e) => {
+                          setBillLotteryId(e.target.value);
+                          setFilter("");
+                        }}
+                      >
+                        <option value="">ทุกประเภทหวย</option>
+                        {state.lotteries.map((l) => (
+                          <option key={l.id} value={l.id}>
+                            {l.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      งวด
+                      <select
+                        value={filter.startsWith("d") ? filter : ""}
+                        onChange={(e) => setFilter(e.target.value)}
+                      >
+                        <option value="">ทุกงวด</option>
+                        {state.draws
+                          .filter(
+                            (d) =>
+                              !billLotteryId ||
+                              String(d.lottery_id) === billLotteryId,
+                          )
+                          .slice()
+                          .sort((a, b) =>
+                            String(b.draw_date).localeCompare(
+                              String(a.draw_date),
+                            ),
+                          )
+                          .map((d) => (
+                            <option key={d.id} value={"d" + d.id}>
+                              {date(d.draw_date)}
+                            </option>
+                          ))}
+                      </select>
+                    </label>
+                    {u.role === "Leader" && (
+                      <label>
+                        สมาชิก
+                        <select
+                          value={memberFilter}
+                          onChange={(e) => setMemberFilter(e.target.value)}
+                        >
+                          <option value="">ทุกคน</option>
+                          {state.users.map((m) => (
+                            <option key={m.id} value={m.id}>
+                              {m.name}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    )}
+                    <label>
+                      สถานะผล
+                      <select
+                        value={billResultFilter}
+                        onChange={(e) => setBillStatusFilter(e.target.value)}
+                      >
+                        <option value="">ทุกสถานะ</option>
+                        <option value="won">ถูกรางวัล</option>
+                        <option value="lost">ไม่ถูกรางวัล</option>
+                        <option value="pending">ยังไม่ออกผล</option>
+                        <option value="cancelled">ยกเลิก</option>
+                      </select>
+                    </label>
+                    <label>
+                      สกุลเงิน
+                      <select
+                        value={prizeCurrency}
+                        onChange={(e) => setPrizeCurrency(e.target.value)}
+                      >
+                        <option value="THB">บาท</option>
+                        <option value="LAK">K กีบ</option>
+                        <option value="">ทุกสกุลเงิน</option>
+                      </select>
+                    </label>
+                    <label>
+                      เรียงรายการ
+                      <select
+                        value={prizeSort}
+                        onChange={(e) => setPrizeSort(e.target.value)}
+                      >
+                        <option value="latest">บิลล่าสุดก่อน</option>
+                        <option value="win">เงินรางวัลสูงสุดก่อน</option>
+                      </select>
+                    </label>
+                  </div>
+                  <section className="bill-list">
+                    {filterResultBills(
+                      (state.bills || []).filter(
+                        (b) =>
+                          (!billLotteryId ||
+                            String(
+                              state.draws.find((d) => d.id === b.draw_id)
+                                ?.lottery_id,
+                            ) === billLotteryId) &&
+                          (!filter.startsWith("d") ||
+                            "d" + b.draw_id === filter) &&
+                          (u.role !== "Leader" ||
+                            !memberFilter ||
+                            String(b.member_id) === memberFilter),
+                      ),
+                      state.draws,
+                      {
+                        status: billResultFilter,
+                        currency: prizeCurrency,
+                        sort: prizeSort,
+                        now: tick,
+                      },
+                    ).map((b) => (
+                      <Bill
+                        key={b.id}
+                        b={b}
+                        state={state}
+                        edit={u.role === "Member" ? () => editBill(b) : null}
+                        cancel={
+                          u.role === "Member"
+                            ? () =>
+                                setModal({
+                                  title: "ยืนยันยกเลิกโพย #" + b.id,
+                                  confirm: () =>
+                                    act(async () => {
+                                      await api.delete("/bills/" + b.id);
+                                      setModal(null);
+                                    }),
+                                })
+                            : null
+                        }
+                      />
+                    ))}
+                    {!filterResultBills(
+                      (state.bills || []).filter(
+                        (b) =>
+                          (!billLotteryId ||
+                            String(
+                              state.draws.find((d) => d.id === b.draw_id)
+                                ?.lottery_id,
+                            ) === billLotteryId) &&
+                          (!filter.startsWith("d") ||
+                            "d" + b.draw_id === filter) &&
+                          (u.role !== "Leader" ||
+                            !memberFilter ||
+                            String(b.member_id) === memberFilter),
+                      ),
+                      state.draws,
+                      {
+                        status: billResultFilter,
+                        currency: prizeCurrency,
+                        sort: prizeSort,
+                        now: tick,
+                      },
+                    ).length && <Empty text="ไม่มีบิลตรงกับตัวกรอง" />}
                   </section>
                 </>
               )}
@@ -1741,16 +1895,36 @@ function Bill({ b, state, cancel, edit }) {
         new Date(setting.closeAt).getTime(),
         new Date(d?.result_at).getTime(),
       );
+  const result = billResultStatus(b, d);
+  const statusText = {
+    won: "ถูกรางวัล",
+    lost: "ไม่ถูกรางวัล",
+    pending: "ยังไม่ออกผล",
+    cancelled: "ยกเลิกแล้ว",
+  }[result];
   return (
-    <details className="bill">
+    <details className={`bill bill-card bill-${result}`}>
       <summary>
-        <span>
-          #{String(b.id).padStart(5, "0")} · {d?.name} · {date(d?.draw_date)}
-        </span>
-        <b>
-          {amountText(b.gross, currencyOf(b))}{" "}
-          <small>{b.status === "cancelled" ? "ยกเลิกแล้ว" : "ส่งแล้ว"}</small>
-        </b>
+        <div className="bill-card-info">
+          <strong>#{String(b.id).padStart(5, "0")}</strong>
+          <span>
+            {d?.name} · งวด {date(d?.draw_date)}
+          </span>
+          <small>{b.member_name || "บิลของคุณ"}</small>
+        </div>
+        <div className="bill-card-amount">
+          <small>ยอดซื้อ</small>
+          <b>{amountText(b.gross, currencyOf(b))}</b>
+        </div>
+        <div className="bill-card-result">
+          <span className={`bill-status bill-status-${result}`}>
+            {statusText}
+          </span>
+          {result === "won" && (
+            <strong>{amountText(b.win, currencyOf(b))}</strong>
+          )}
+          <small>กดดูรายการในบิล</small>
+        </div>
       </summary>
       {b.items.map((i, index) => (
         <div className="item" key={index}>
@@ -1763,8 +1937,10 @@ function Bill({ b, state, cancel, edit }) {
       ))}
       <p>ยอดรวม {amountText(b.gross, currencyOf(b))}</p>
       <p>
-        ถูกรางวัล {amountText(b.win, currencyOf(b))} ·{" "}
-        {b.note || "ไม่มีหมายเหตุ"}
+        {result === "won"
+          ? "ถูกรางวัล " + amountText(b.win, currencyOf(b))
+          : statusText}{" "}
+        · {b.note || "ไม่มีหมายเหตุ"}
       </p>
       {edit && editable && b.status === "active" && (
         <button onClick={edit}>แก้ไขโพย</button>

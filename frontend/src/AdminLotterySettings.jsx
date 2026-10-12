@@ -153,7 +153,7 @@ export function DrawEditor({ lotteries, lotteryId, draw, onSave }) {
   );
 }
 
-function ResultEditor({ draw, onSave }) {
+export function ResultEditor({ draw, onSave }) {
   return (
     <form
       className="admin-edit-form"

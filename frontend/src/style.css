@@ -827,3 +827,7 @@ footer {
 .result-placeholder {
   padding: 24px;
 }
+.result-edit-action {
+  width: 100%;
+  margin-top: 20px;
+}

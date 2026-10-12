@@ -265,3 +265,111 @@ export function convertedDrawTotals(bills, drawId, exchangeRates) {
     }
   return { lakInTHB, totalTHB: lakInTHB === null ? null : thb + lakInTHB };
 }
+
+// One explicit result, including the separately recorded two-digit top result.
+export function resultScenario(bills, drawId, result) {
+  const received = { THB: 0, LAK: 0 };
+  const paid = { THB: 0, LAK: 0 };
+  const payout = Object.fromEntries(
+    reportTypes.map((t) => [t, { THB: 0, LAK: 0 }]),
+  );
+  let count = 0;
+  for (const bill of drawBills(bills, drawId)) {
+    const currency = reportCurrencyOf(bill);
+    for (const item of bill.items || []) {
+      received[currency] += Number(item.net ?? item.amount);
+      const wins =
+        item.type === "2top"
+          ? item.number === result.top2
+          : item.type === "runTop"
+            ? result.top2.includes(item.number)
+            : winsForResult(item, result.top3, result.bottom2);
+      if (wins) {
+        count++;
+        payout[item.type][currency] +=
+          Number(item.amount) * Number(item.rate || 0);
+      }
+    }
+  }
+  for (const t of reportTypes)
+    for (const c of ["THB", "LAK"]) {
+      payout[t][c] = roundMoney(payout[t][c]);
+      paid[c] += payout[t][c];
+    }
+  return {
+    received,
+    paid,
+    payout,
+    count,
+    profit: {
+      THB: roundMoney(received.THB - paid.THB),
+      LAK: roundMoney(received.LAK - paid.LAK),
+    },
+  };
+}
+
+export function numberExposure(bills, drawId, currency = "THB") {
+  const rows = new Map();
+  for (const bill of drawBills(bills, drawId)) {
+    if (reportCurrencyOf(bill) !== currency) continue;
+    for (const item of bill.items || []) {
+      // All permutations of a tod number win together, so share one exposure.
+      const number =
+        item.type === "3tod" ? [...item.number].sort().join("") : item.number;
+      const key = `${item.type}:${number}`;
+      if (!rows.has(key))
+        rows.set(key, {
+          key,
+          type: item.type,
+          number,
+          amount: 0,
+          payout: 0,
+          count: 0,
+        });
+      const row = rows.get(key);
+      row.amount += Number(item.amount);
+      row.payout += Number(item.amount) * Number(item.rate || 0);
+      row.count++;
+    }
+  }
+  return [...rows.values()].map((r) => ({
+    ...r,
+    amount: roundMoney(r.amount),
+    payout: roundMoney(r.payout),
+  }));
+}
+
+export function winningBills(bills, draw, now = Date.now()) {
+  if (
+    !draw?.top3 ||
+    !draw.top2 ||
+    !draw.bottom2 ||
+    now < new Date(draw.result_at).getTime()
+  )
+    return [];
+  return drawBills(bills, draw.id).flatMap((bill) => {
+    const items = (bill.items || [])
+      .filter((item) =>
+        item.type === "2top"
+          ? item.number === draw.top2
+          : item.type === "runTop"
+            ? draw.top2.includes(item.number)
+            : winsForResult(item, draw.top3, draw.bottom2),
+      )
+      .map((item) => ({
+        ...item,
+        payout: roundMoney(Number(item.amount) * Number(item.rate || 0)),
+      }));
+    const total = roundMoney(items.reduce((sum, item) => sum + item.payout, 0));
+    return total > 0
+      ? [
+          {
+            ...bill,
+            currency: reportCurrencyOf(bill),
+            winningItems: items,
+            winningTotal: total,
+          },
+        ]
+      : [];
+  });
+}

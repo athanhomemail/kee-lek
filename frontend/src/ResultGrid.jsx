@@ -2,7 +2,7 @@ import React from "react";
 import LotteryFlag from "./LotteryFlag.jsx";
 import { resultColumns } from "./draws.js";
 
-function ResultCard({ draw, now }) {
+function ResultCard({ draw, now, isAdmin, onEdit }) {
   return (
     <section className="panel result">
       <span className="badge">{draw.kind}</span>
@@ -24,63 +24,84 @@ function ResultCard({ draw, now }) {
           <div key={field}>
             <small>{label}</small>
             <strong>
-              {(now >= new Date(draw.result_at).getTime() && draw[field]) ||
+              {((isAdmin || now >= new Date(draw.result_at).getTime()) &&
+                draw[field]) ||
                 "—"}
             </strong>
           </div>
         ))}
       </div>
+      {isAdmin && (
+        <button
+          className="admin-result-action result-edit-action"
+          onClick={() => onEdit(draw)}
+        >
+          {draw.top3 ? "แก้ไขผล" : "กรอกผลหวย"}
+        </button>
+      )}
     </section>
   );
 }
 
-export default function ResultGrid({ draws, lotteries, now, matches }) {
+export default function ResultGrid({
+  draws,
+  lotteries,
+  now,
+  matches,
+  isAdmin = false,
+  onEdit,
+}) {
   const columns = resultColumns(draws, lotteries, now);
   // Select each lottery's current draw before applying date filters.
   const visible = columns.filter((c) =>
     [c.current, ...c.history].some((d) => d && matches(d)),
   );
   if (!visible.length) return <p className="muted">ไม่มีงวดที่ตรงกับตัวกรอง</p>;
-  const history = visible.map((c) => c.history.filter(matches));
-  const rows = Math.max(0, ...history.map((items) => items.length));
   return (
-    <div className="result-grid-scroll">
-      <div
-        className="result-grid"
-        style={{ "--result-columns": visible.length }}
-      >
-        <h2 className="result-section-label">
-          งวดปัจจุบัน / รอออกผล / งวดล่าสุด
-        </h2>
-        {visible.map((c) => (
-          <div key={c.lotteryId}>
-            {c.current && matches(c.current) ? (
-              <ResultCard draw={c.current} now={now} />
-            ) : (
-              <div className="result-placeholder muted">
-                {c.history[0]?.name} · ไม่มีงวดปัจจุบันในช่วงที่เลือก
+    <div className="lottery-result-rows">
+      {visible.map((c) => {
+        const history = c.history.filter(matches);
+        return (
+          <section className="lottery-result-row" key={c.lotteryId}>
+            <h2>{c.current?.name || c.history[0]?.name}</h2>
+            <div className="lottery-result-track">
+              <div className="lottery-result-current">
+                <span className="lottery-result-label">
+                  งวดปัจจุบัน / งวดล่าสุด
+                </span>
+                {c.current && matches(c.current) ? (
+                  <ResultCard
+                    draw={c.current}
+                    now={now}
+                    isAdmin={isAdmin}
+                    onEdit={onEdit}
+                  />
+                ) : (
+                  <div className="panel result-placeholder muted">
+                    ไม่มีงวดปัจจุบันในช่วงที่เลือก
+                  </div>
+                )}
               </div>
-            )}
-          </div>
-        ))}
-        <h2 className="result-section-label result-history-divider">
-          งวดย้อนหลัง
-        </h2>
-        {Array.from({ length: rows }, (_, row) =>
-          visible.map((c, column) => (
-            <div key={`${c.lotteryId}-${row}`}>
-              {history[column][row] && (
-                <ResultCard draw={history[column][row]} now={now} />
+              {history.map((d) => (
+                <div className="lottery-result-history" key={d.id}>
+                  <span className="lottery-result-label">งวดย้อนหลัง</span>
+                  <ResultCard
+                    draw={d}
+                    now={now}
+                    isAdmin={isAdmin}
+                    onEdit={onEdit}
+                  />
+                </div>
+              ))}
+              {!history.length && (
+                <p className="muted lottery-result-no-history">
+                  ไม่มีงวดย้อนหลังในช่วงที่เลือก
+                </p>
               )}
             </div>
-          )),
-        )}
-        {!rows && (
-          <p className="result-section-label muted">
-            ยังไม่มีงวดย้อนหลังในช่วงที่เลือก
-          </p>
-        )}
-      </div>
+          </section>
+        );
+      })}
     </div>
   );
 }

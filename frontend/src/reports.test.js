@@ -260,3 +260,129 @@ test("changing report exchange rates never changes native purchases or winnings"
   );
   assert.deepEqual(bills, original);
 });
+
+import { numberExposure, resultScenario } from "./reports.js";
+test("number exposure merges tod permutations and sums saved rates separately by currency", () => {
+  const records = [
+    {
+      draw_id: 1,
+      status: "active",
+      items: [
+        { type: "3tod", number: "321", amount: 10, rate: 75 },
+        { type: "3tod", number: "123", amount: 20, rate: 37.5 },
+        { type: "2top", number: "23", amount: 5, rate: 95 },
+      ],
+    },
+    {
+      draw_id: 1,
+      status: "active",
+      currency: "LAK",
+      items: [{ type: "3tod", number: "213", amount: 1, rate: 75 }],
+    },
+    {
+      draw_id: 1,
+      status: "cancelled",
+      items: [{ type: "3tod", number: "123", amount: 100, rate: 75 }],
+    },
+  ];
+  const rows = numberExposure(records, 1);
+  assert.deepEqual(
+    rows.find((r) => r.type === "3tod"),
+    {
+      key: "3tod:123",
+      type: "3tod",
+      number: "123",
+      amount: 30,
+      payout: 1500,
+      count: 2,
+    },
+  );
+  assert.equal(numberExposure(records, 1, "LAK")[0].payout, 75);
+  assert.deepEqual(numberExposure(records, 2), []);
+});
+test("explicit scenario respects recorded top2 independently of top3", () => {
+  const records = [
+    {
+      draw_id: 1,
+      status: "active",
+      items: [
+        { type: "3top", number: "123", amount: 10, rate: 900 },
+        { type: "2top", number: "45", amount: 20, rate: 95 },
+        { type: "2top", number: "23", amount: 30, rate: 95 },
+        { type: "runTop", number: "4", amount: 10, rate: 3 },
+        { type: "runTop", number: "2", amount: 10, rate: 3 },
+      ],
+    },
+  ];
+  const report = resultScenario(records, 1, {
+    top3: "123",
+    top2: "45",
+    bottom2: "00",
+  });
+  assert.equal(report.paid.THB, 10930);
+  assert.equal(report.count, 3);
+  assert.equal(report.profit.THB, 80 - 10930);
+  assert.equal(report.payout["2top"].THB, 1900);
+});
+
+import { winningBills } from "./reports.js";
+test("winning bills wait for publication, exclude cancellations, and preserve member and saved payouts", () => {
+  const draw = {
+    id: 1,
+    top3: "123",
+    top2: "45",
+    bottom2: "00",
+    result_at: "2026-10-12T12:00:00+07:00",
+  };
+  const records = [
+    {
+      id: 7,
+      member_id: 2,
+      member_name: "A",
+      draw_id: 1,
+      status: "active",
+      items: [
+        { type: "2top", number: "45", amount: 10, rate: 47.5 },
+        { type: "2top", number: "23", amount: 20, rate: 95 },
+      ],
+    },
+    {
+      id: 8,
+      member_id: 3,
+      draw_id: 1,
+      status: "active",
+      currency: "LAK",
+      items: [{ type: "3tod", number: "321", amount: 2, rate: 75 }],
+    },
+    {
+      id: 9,
+      draw_id: 1,
+      status: "cancelled",
+      items: [{ type: "3top", number: "123", amount: 100, rate: 900 }],
+    },
+    {
+      id: 10,
+      draw_id: 2,
+      status: "active",
+      items: [{ type: "3top", number: "123", amount: 100, rate: 900 }],
+    },
+  ];
+  assert.deepEqual(
+    winningBills(records, draw, Date.parse(draw.result_at) - 1),
+    [],
+  );
+  const rows = winningBills(records, draw, Date.parse(draw.result_at));
+  assert.deepEqual(
+    rows.map((r) => [r.id, r.currency, r.winningTotal]),
+    [
+      [7, "THB", 475],
+      [8, "LAK", 150],
+    ],
+  );
+  assert.equal(rows[0].winningItems.length, 1);
+  assert.equal(rows[0].member_name, "A");
+  assert.deepEqual(
+    winningBills(records, { ...draw, top2: null }, Date.parse(draw.result_at)),
+    [],
+  );
+});
