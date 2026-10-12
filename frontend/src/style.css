@@ -802,3 +802,28 @@ footer {
     width: 80px !important;
   }
 }
+
+.result-grid-scroll {
+  overflow-x: auto;
+}
+.result-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--result-columns), minmax(260px, 1fr));
+  gap: 20px;
+}
+.result-grid .panel {
+  margin-bottom: 0;
+}
+.result-section-label {
+  grid-column: 1 / -1;
+  margin: 0;
+  font-size: 18px;
+}
+.result-history-divider {
+  border-top: 2px solid var(--palette-border-eee7df, #eee7df);
+  margin-top: 8px;
+  padding-top: 24px;
+}
+.result-placeholder {
+  padding: 24px;
+}

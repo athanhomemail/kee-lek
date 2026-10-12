@@ -10,6 +10,7 @@ import html2canvas from "html2canvas";
 import Statistics from "./Statistics.jsx";
 import MaintenancePanel from "./MaintenancePanel.jsx";
 import LotteryFlag from "./LotteryFlag.jsx";
+import ResultGrid from "./ResultGrid.jsx";
 import { laoReceiptDate } from "./receipt.js";
 import {
   Sun,
@@ -766,46 +767,14 @@ export default function App() {
                 <>
                   {filters}
 
-                  <div className="cards">
-                    {resultDraws(state.draws, tick)
-                      .filter(
-                        (d) =>
-                          matches(d) &&
-                          (!filter || String(d.lottery_id) === filter),
-                      )
-                      .map((d) => (
-                        <section className="panel result" key={d.id}>
-                          <span className="badge">{d.kind}</span>
-                          <h2>
-                            <LotteryFlag flag={d.flag} /> {d.name}
-                          </h2>
-                          <p className="muted">งวด {date(d.draw_date)}</p>
-                          <div className="winning">
-                            <div>
-                              <small>3 ตัวบน</small>
-                              <strong>
-                                {(tick >= new Date(d.result_at) && d.top3) ||
-                                  "—"}
-                              </strong>
-                            </div>
-                            <div>
-                              <small>2 ตัวบน</small>
-                              <strong>
-                                {(tick >= new Date(d.result_at) && d.top2) ||
-                                  "—"}
-                              </strong>
-                            </div>
-                            <div>
-                              <small>2 ตัวล่าง</small>
-                              <strong>
-                                {(tick >= new Date(d.result_at) && d.bottom2) ||
-                                  "—"}
-                              </strong>
-                            </div>
-                          </div>
-                        </section>
-                      ))}
-                  </div>
+                  <ResultGrid
+                    draws={state.draws}
+                    lotteries={state.lotteries || []}
+                    now={tick}
+                    matches={(d) =>
+                      matches(d) && (!filter || String(d.lottery_id) === filter)
+                    }
+                  />
                   {!state.draws.length && (
                     <Empty text="ยังไม่มีงวดหวย รอผู้ดูแลเพิ่มงวดแรก" />
                   )}
