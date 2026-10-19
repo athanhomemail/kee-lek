@@ -397,6 +397,16 @@ test(
       assert.equal(resetState.user.password_cipher, undefined);
       assert.equal((await api(`/users/${member1}/password`, l)).data.password, password);
       assert.ok(resetState.users.every((user) => user.password === undefined));
+      assert.equal((await api(`/users/${member2}`, members[0].token, null, 'DELETE')).status, 403);
+      await q("UPDATE users SET leader_id=NULL WHERE id=?", [member2]);
+      assert.equal((await api(`/users/${member2}`, l, null, 'DELETE')).status, 400);
+      await q("UPDATE users SET leader_id=? WHERE id=?", [leader, member2]);
+      const beforeDeleteBills = (await api('/state', l)).data.bills;
+      assert.equal((await api(`/users/${member2}`, l, null, 'DELETE')).status, 200);
+      assert.equal((await api('/state', members[1].token)).status, 401);
+      const afterDelete = (await api('/state', l)).data;
+      assert.equal(afterDelete.users.find(u => u.id === member2).active, 0);
+      assert.equal(afterDelete.bills.length, beforeDeleteBills.length, 'deletion retains bill history');
       const resetLeader = await api(`/users/${leader}/reset-password`, a, {});
       assert.equal(resetLeader.status, 200);
       const resetLeaderToken = await login(resetLeader.data.username, resetLeader.data.password);

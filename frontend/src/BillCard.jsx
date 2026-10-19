@@ -107,6 +107,12 @@ export default function BillCard({ b, state, cancel, edit }) {
               {created ? `บันทึก ${created}` : `${b.items.length} รายการ`}
             </span>
           </div>
+          <p>
+            ลูกค้าต้องจ่าย{" "}
+            <b>
+              {money(b.net ?? b.gross)} {unit}
+            </b>
+          </p>
           <div className="bill-items-scroll">
             <table className="bill-items-table">
               <thead>

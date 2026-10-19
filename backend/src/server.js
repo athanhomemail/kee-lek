@@ -408,6 +408,36 @@ app.post(
     }
   }),
 );
+app.delete(
+  "/api/users/:id",
+  role(["Leader"]),
+  route(async (req, res) => {
+    const c = await db.getConnection();
+    try {
+      await c.beginTransaction();
+      await query(
+        "SELECT id FROM users WHERE id=? FOR UPDATE",
+        [req.user.id],
+        c,
+      );
+      const result = await query(
+        "UPDATE users SET active=0 WHERE id=? AND leader_id=? AND role='Member' AND active=1",
+        [req.params.id, req.user.id],
+        c,
+      );
+      if (!result.affectedRows) throw Error("ไม่พบสมาชิกในเครือข่ายที่ลบได้");
+      await c.commit();
+      io.to("user:" + req.params.id).emit("refresh");
+      changed(req.user.id);
+      res.json({ ok: true });
+    } catch (error) {
+      await c.rollback();
+      throw error;
+    } finally {
+      c.release();
+    }
+  }),
+);
 app.patch(
   "/api/users/:id",
   role(["Admin"]),
@@ -709,6 +739,7 @@ app.post(
         [req.user.id],
         c,
       );
+      if (!member?.active) throw Error("บัญชีสมาชิกถูกลบแล้ว");
       let previous = null;
       if (req.params.id) {
         [previous] = await query(

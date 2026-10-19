@@ -1566,7 +1566,7 @@ export default function App() {
                         </label>
                         <div className="totals">
                           <p>
-                            ยอดรวม <b>{amountText(total, currency)}</b>
+                            ลูกค้าต้องจ่าย <b>{amountText(total, currency)}</b>
                           </p>
                         </div>
                         <button
@@ -1926,23 +1926,53 @@ function Team({ state, act, modal }) {
           <Plus size={17} /> เพิ่มสมาชิก
         </button>
       </div>
-      {state.users.map((m) => (
-        <div className="item" key={m.id}>
-          <span className="avatar">{m.name[0]}</span>
-          <div>
-            {m.name}
-            <small>
-              {m.username} · {m.phone}
-            </small>
+      {state.users
+        .filter((m) => m.role === "Member" && m.active)
+        .map((m) => (
+          <div className="item network-member" key={m.id}>
+            <span className="avatar">{m.name[0]}</span>
+            <div className="member-identity">
+              {m.name}
+              <small>
+                {m.username} · {m.phone}
+              </small>
+            </div>
+            <UserPasswordAccess person={m} api={api} act={act} modal={modal} />
+            <button
+              className="danger"
+              onClick={() =>
+                modal({
+                  title: `ลบบัญชี ${m.name}?`,
+                  content: (
+                    <p>
+                      สมาชิกจะเข้าใช้งานไม่ได้ และถูกนำออกจากรายชื่อสมาชิก
+                      บิลและประวัติย้อนหลังยังคงอยู่ในรายงาน
+                    </p>
+                  ),
+                  confirm: () =>
+                    act(async () => {
+                      await api.delete("/users/" + m.id);
+                      modal(null);
+                    }),
+                })
+              }
+            >
+              ลบบัญชี
+            </button>
           </div>
-          <UserPasswordAccess person={m} api={api} act={act} modal={modal} />
-        </div>
-      ))}
+        ))}
     </section>
   );
 }
 function SettingsPage({ state, act, modal }) {
   const [adminTab, setAdminTab] = useState("leaders");
+  const [leaderLotteryId, setLeaderLotteryId] = useState("");
+  const selectedLeaderLotteryId = String(
+    state.lotteries.find((l) => l.enabled && String(l.id) === leaderLotteryId)
+      ?.id ??
+      state.lotteries.find((l) => l.enabled)?.id ??
+      "",
+  );
   const [search, setSearch] = useState("");
   const matchesSearch = (row) =>
     [row.name, row.username, row.phone, row.draw_date]
@@ -2142,8 +2172,35 @@ function SettingsPage({ state, act, modal }) {
     </div>
   ) : (
     <>
+      <section className="panel">
+        <h2>ตั้งค่าประเภทหวย</h2>
+        <label>
+          เลือกหวยที่ต้องการจัดการ
+          <select
+            value={selectedLeaderLotteryId}
+            onChange={(e) => setLeaderLotteryId(e.target.value)}
+          >
+            <option value="" disabled>
+              เลือกประเภทหวย
+            </option>
+            {state.lotteries
+              .filter((l) => l.enabled)
+              .map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
+          </select>
+        </label>
+        {!selectedLeaderLotteryId && (
+          <p className="muted">
+            เลือกประเภทหวยเพื่อตั้งค่าเวลาปิดรับ อัตราจ่าย วงเงิน
+            และกติกาของแต่ละงวด
+          </p>
+        )}
+      </section>
       {state.lotteries
-        .filter((l) => l.enabled)
+        .filter((l) => l.enabled && String(l.id) === selectedLeaderLotteryId)
         .map((l) => {
           const c =
             state.settings.find((s) => s.lottery_id === l.id)?.config ||
@@ -2226,7 +2283,7 @@ function SettingsPage({ state, act, modal }) {
           );
         })}
       {state.lotteries
-        .filter((l) => l.enabled)
+        .filter((l) => l.enabled && String(l.id) === selectedLeaderLotteryId)
         .map((lottery) => (
           <DrawRulesCard
             key={lottery.id}

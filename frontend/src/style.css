@@ -831,3 +831,6 @@ footer {
   width: 100%;
   margin-top: 20px;
 }
+
+.network-member { flex-wrap: wrap; }
+.member-identity { flex: 1; min-width: 120px; }
