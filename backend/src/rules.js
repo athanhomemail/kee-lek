@@ -11,7 +11,7 @@ export const defaults = {
   },
   blocked: [],
   half: [],
-  closeAt: "",
+  closeTime: "",
 };
 export const billCurrency = (bill) => bill.items?.[0]?.currency || "THB";
 export function currencyConfig(config, currency = "THB") {
@@ -91,4 +91,22 @@ export function checkLimits(existing, items, config, currency) {
     )
       throw Error("เลข " + i.number + " เกินวงเงินรับซื้อ");
   }
+}
+
+// A configured lottery time overrides legacy per-draw cutoffs (Thailand time).
+export function drawConfig(draw, setting = {}, rules = {}) {
+  const config = { ...setting, ...rules };
+  config.closeAt = /^([01]\d|2[0-3]):[0-5]\d$/.test(setting.closeTime || "")
+    ? new Date(`${draw.draw_date}T${setting.closeTime}:00+07:00`).toISOString()
+    : rules.closeAt || "";
+  return config;
+}
+export function salesOpen(draw, config, now = Date.now()) {
+  const cutoff = Date.parse(config.closeAt);
+  const result = new Date(draw.result_at).getTime();
+  return (
+    Number.isFinite(cutoff) &&
+    Number.isFinite(result) &&
+    now < Math.min(cutoff, result)
+  );
 }

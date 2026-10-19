@@ -308,7 +308,7 @@ export default function App() {
     const remaining =
       Math.min(new Date(c?.closeAt || d.result_at), new Date(d.result_at)) -
       tick;
-    if (!c) return "รอหัวหน้าตั้งเวลาปิดรับ";
+    if (!c?.closeAt) return "รอหัวหน้าตั้งเวลาปิดรับ";
     if (remaining <= 0) return "ปิดรับแล้ว";
     const seconds = Math.floor(remaining / 1000);
     return (
@@ -2171,7 +2171,7 @@ function SettingsPage({ state, act, modal }) {
                   );
                   act(async () => {
                     await api.post("/settings/" + l.id, {
-                      closeAt: new Date().toISOString(),
+                      closeTime: v.closeTime,
                       limit: c.limit,
                       limits: Object.fromEntries(
                         Object.keys(labels).map((k) => [
@@ -2204,9 +2204,22 @@ function SettingsPage({ state, act, modal }) {
                   });
                 }}
               >
+                <label>
+                  เวลาปิดรับ (เวลาไทย)
+                  <input
+                    type="time"
+                    name="closeTime"
+                    defaultValue={c.closeTime || ""}
+                    required
+                  />
+                </label>
+                <p>
+                  ปิดรับในวันที่ของแต่ละงวดตามเวลานี้
+                  ใช้กับทุกงวดของหวยประเภทนี้ รวมถึงงวดที่เพิ่มใหม่
+                </p>
                 <RateTable config={c} />
                 <button className="primary rate-save">
-                  บันทึกอัตราจ่ายและวงเงิน
+                  บันทึกเวลาปิดรับ อัตราจ่ายและวงเงิน
                 </button>
               </form>
             </section>
@@ -2237,10 +2250,6 @@ function DrawRulesCard({ lottery, state, act, modal }) {
   const d = upcoming.find((d) => String(d.id) === selectedId) || upcoming[0];
   if (!d) return null;
   const c = state.drawSettings.find((s) => s.draw_id === d.id)?.config;
-  const closeAt =
-    c?.closeAt && Number.isFinite(Date.parse(c.closeAt))
-      ? new Date(Date.parse(c.closeAt) + 7 * 3600000).toISOString().slice(0, 16)
-      : "";
   return (
     <section className="panel draw-rules">
       <div className="section-head">
@@ -2267,22 +2276,6 @@ function DrawRulesCard({ lottery, state, act, modal }) {
         key={d.id + JSON.stringify(c)}
         fields={[
           {
-            name: "closeDate",
-            label: "วันที่ปิดรับ",
-            type: "date",
-            value:
-              closeAt.slice(0, 10) ||
-              new Date(new Date(d.result_at).getTime() + 7 * 3600000)
-                .toISOString()
-                .slice(0, 10),
-          },
-          {
-            name: "closeTime",
-            label: "เวลาปิดรับ",
-            type: "time",
-            value: closeAt.slice(11, 16),
-          },
-          {
             name: "blocked",
             label: "เลขปิดรับ (คั่นด้วยช่องว่าง)",
             value: c?.blocked?.join(" ") || "",
@@ -2298,7 +2291,6 @@ function DrawRulesCard({ lottery, state, act, modal }) {
         onSubmit={(v) =>
           act(async () => {
             await api.post("/draw-settings/" + d.id, {
-              closeAt: v.closeDate + "T" + v.closeTime,
               blocked: v.blocked.split(/\s+/).filter(Boolean),
               half: v.half.split(/\s+/).filter(Boolean),
             });

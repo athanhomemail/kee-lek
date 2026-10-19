@@ -14,6 +14,8 @@ import { db } from "./db.js";
 import { cleanup, cleanupModes } from "./maintenance.js";
 import { notify } from "./notifications.js";
 import {
+  drawConfig,
+  salesOpen,
   defaults,
   price,
   winnings,
@@ -263,9 +265,16 @@ app.get(
       })),
       exchangeRates,
       settings: settings.map((s) => ({ ...s, config: cleanConfig(s.config) })),
-      drawSettings: drawSettings.map((s) => ({
-        ...s,
-        config: cleanConfig(s.config),
+      drawSettings: draws.map((d) => ({
+        leader_id: leader,
+        draw_id: d.id,
+        config: cleanConfig(
+          drawConfig(
+            d,
+            settings.find((s) => s.lottery_id === d.lottery_id)?.config,
+            drawSettings.find((s) => s.draw_id === d.id)?.config,
+          ),
+        ),
       })),
       notifications,
       usage: teamBills.map((b) => ({
@@ -527,7 +536,9 @@ app.post(
     const { discount, discounts, ...settings } = req.body;
     const c = { ...defaults, ...settings };
     if (
-      !Number.isFinite(Date.parse(c.closeAt)) ||
+      (c.closeTime
+        ? !/^([01]\d|2[0-3]):[0-5]\d$/.test(c.closeTime)
+        : !Number.isFinite(Date.parse(c.closeAt))) ||
       !(c.limit > 0) ||
       !Array.isArray(c.blocked) ||
       !Array.isArray(c.half) ||
@@ -644,9 +655,8 @@ app.post(
   "/api/draw-settings/:draw",
   role(["Leader"]),
   route(async (req, res) => {
-    const c = { ...req.body, closeAt: bangkok(req.body.closeAt).toISOString() };
+    const c = { blocked: req.body.blocked, half: req.body.half };
     if (
-      !Number.isFinite(Date.parse(c.closeAt)) ||
       !Array.isArray(c.blocked) ||
       !Array.isArray(c.half) ||
       [...c.blocked, ...c.half].some((n) => !/^[0-9]{1,3}$/.test(n))
@@ -655,8 +665,23 @@ app.post(
     const [d] = await query("SELECT * FROM draws WHERE id=?", [
       req.params.draw,
     ]);
-    if (!d || new Date(c.closeAt) > new Date(d.result_at))
-      throw Error("เวลาปิดรับต้องไม่เกินเวลาออกผล");
+    if (!d) throw Error("ไม่พบงวดหวย");
+    // Keep legacy clients and existing cutoffs working during the transition.
+    const [previous] = await query(
+      "SELECT config FROM draw_settings WHERE leader_id=? AND draw_id=?",
+      [req.user.id, req.params.draw],
+    );
+    if (req.body.closeAt !== undefined) {
+      const legacyClose = bangkok(req.body.closeAt);
+      if (
+        !Number.isFinite(legacyClose.getTime()) ||
+        legacyClose > new Date(d.result_at)
+      )
+        throw Error("เวลาปิดรับต้องไม่เกินเวลาออกผล");
+      c.closeAt = legacyClose.toISOString();
+    } else if (previous?.config?.closeAt) {
+      c.closeAt = previous.config.closeAt;
+    }
     await query(
       "INSERT INTO draw_settings VALUES (?,?,?) ON DUPLICATE KEY UPDATE config=VALUES(config)",
       [req.user.id, req.params.draw, JSON.stringify(c)],
@@ -714,16 +739,9 @@ app.post(
       const currency = req.body.currency || "THB";
       if (previous && billCurrency(previous) !== currency)
         throw Error("ไม่สามารถเปลี่ยนสกุลเงินของบิลเดิม");
-      const merged = { ...setting.config, ...drawSetting?.config };
+      const merged = drawConfig(draw, setting.config, drawSetting?.config);
       const config = currencyConfig(merged, currency);
-      if (
-        !drawSetting?.config?.closeAt ||
-        Date.now() >=
-          Math.min(
-            new Date(config.closeAt).getTime(),
-            new Date(draw.result_at).getTime(),
-          )
-      )
+      if (!salesOpen(draw, merged))
         throw Error("ปิดรับแล้วหรือยังไม่ได้ตั้งค่าปิดรับ");
       const bill = price(req.body.items, merged, currency);
       const existing = await query(
@@ -794,7 +812,7 @@ app.delete(
         c,
       );
       const [b] = await query(
-        "SELECT b.*,d.lottery_id,d.result_at FROM bills b JOIN draws d ON d.id=b.draw_id WHERE b.id=? AND b.member_id=? FOR UPDATE",
+        "SELECT b.*,d.lottery_id,d.draw_date,d.result_at FROM bills b JOIN draws d ON d.id=b.draw_id WHERE b.id=? AND b.member_id=? FOR UPDATE",
         [req.params.id, req.user.id],
         c,
       );
@@ -804,14 +822,12 @@ app.delete(
         [b.leader_id, b.draw_id],
         c,
       );
-      if (
-        !s ||
-        Date.now() >=
-          Math.min(
-            new Date(s.config.closeAt).getTime(),
-            bangkok(b.result_at).getTime(),
-          )
-      )
+      const [setting] = await query(
+        "SELECT config FROM settings WHERE leader_id=? AND lottery_id=?",
+        [b.leader_id, b.lottery_id],
+        c,
+      );
+      if (!salesOpen(b, drawConfig(b, setting?.config, s?.config)))
         throw Error("ปิดรับแล้ว");
       await query("UPDATE bills SET status='cancelled' WHERE id=?", [b.id], c);
       await c.commit();
