@@ -169,7 +169,7 @@ function LotteryResults({
                 {from || to
                   ? `${from || "เริ่มต้น"} – ${to || "ล่าสุด"} · `
                   : ""}
-                ครั้งละ 10 งวด
+                ครั้งละ 9 งวด
               </p>
             </div>
             <button

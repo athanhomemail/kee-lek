@@ -222,14 +222,14 @@ app.get(
       "SELECT d.*,l.name,l.kind,l.flag,l.enabled FROM draws d JOIN lotteries l ON l.id=d.lottery_id WHERE d.lottery_id=? AND d.draw_date<? AND d.draw_date<? AND d.id<>?" +
         (dates[0] ? " AND d.draw_date>=?" : "") +
         (dates[1] ? " AND d.draw_date<=?" : "") +
-        " ORDER BY d.draw_date DESC,d.id DESC LIMIT 11",
+        " ORDER BY d.draw_date DESC,d.id DESC LIMIT 10",
       [id, before, bangkokToday(), exclude, ...dates.filter(Boolean)],
     );
-    const page = rows.slice(0, 10);
+    const page = rows.slice(0, 9);
     res.json({
       draws: hideUnpublished(page, req.user.role),
       nextBefore:
-        rows.length > 10 ? String(page.at(-1).draw_date).slice(0, 10) : null,
+        rows.length > 9 ? String(page.at(-1).draw_date).slice(0, 10) : null,
     });
   }),
 );

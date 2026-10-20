@@ -144,7 +144,7 @@ test(
         member.token,
       );
       assert.equal(history.status, 200);
-      assert.equal(history.data.draws.length, 10);
+      assert.equal(history.data.draws.length, 9);
       const seen = [...history.data.draws];
       while (history.data.nextBefore) {
         history = await api(

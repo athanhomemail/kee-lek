@@ -1,3 +1,8 @@
+import {
+  rememberDiscounts,
+  reconcileDiscounts,
+  memberDiscountRates,
+} from "./memberDiscountState.js";
 import React, { useState, useEffect } from "react";
 import { discountTypes } from "./discounts.js";
 import { labels } from "./keying.js";
@@ -11,6 +16,12 @@ export default function MemberDiscounts({ state, api, act, renderActions }) {
   const [draft, setDraft] = useState(null);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [pendingRates, setPendingRates] = useState({});
+  useEffect(() => {
+    setPendingRates((pending) =>
+      reconcileDiscounts(pending, state.memberDiscounts),
+    );
+  }, [state.memberDiscounts]);
   const members = state.users.filter((m) => m.role === "Member" && m.active);
   useEffect(() => {
     setSelected((previous) => {
@@ -34,11 +45,7 @@ export default function MemberDiscounts({ state, api, act, renderActions }) {
       .includes(search.toLowerCase()),
   );
   const ratesFor = (id) =>
-    state.memberDiscounts?.find(
-      (r) =>
-        String(r.member_id) === String(id) &&
-        String(r.lottery_id) === lotteryId,
-    )?.rates || zero();
+    memberDiscountRates(state.memberDiscounts, pendingRates, id, lotteryId);
   const rates =
     draft || (selected.length === 1 ? ratesFor(selected[0]) : zero());
   const reset = () => {
@@ -46,7 +53,10 @@ export default function MemberDiscounts({ state, api, act, renderActions }) {
     setSaved(false);
   };
   return (
-    <section className="member-discounts">
+    <fieldset
+      className="member-discounts member-discounts-fields"
+      disabled={saving}
+    >
       <div className="member-list-toolbar">
         <input
           aria-label="ค้นหาสมาชิก"
@@ -145,25 +155,36 @@ export default function MemberDiscounts({ state, api, act, renderActions }) {
             </select>
           </label>
           <form
-            onSubmit={(e) => {
+            onSubmit={async (e) => {
               e.preventDefault();
+              const memberIds = [...selected];
+              const savedLotteryId = Number(lotteryId);
+              const savedRates = Object.fromEntries(
+                discountTypes.map((k) => [k, Number(rates[k])]),
+              );
               setSaving(true);
               setSaved(false);
-              act(async () => {
-                try {
+              try {
+                await act(async () => {
                   await api.post("/member-discounts", {
-                    memberIds: selected,
-                    lotteryId: Number(lotteryId),
-                    rates: Object.fromEntries(
-                      discountTypes.map((k) => [k, Number(rates[k])]),
-                    ),
+                    memberIds,
+                    lotteryId: savedLotteryId,
+                    rates: savedRates,
                   });
+                  setPendingRates((previous) =>
+                    rememberDiscounts(
+                      previous,
+                      memberIds,
+                      savedLotteryId,
+                      savedRates,
+                    ),
+                  );
+                  setDraft(savedRates);
                   setSaved(true);
-                  setDraft(null);
-                } finally {
-                  setSaving(false);
-                }
-              });
+                });
+              } finally {
+                setSaving(false);
+              }
             }}
           >
             {selected.length > 1 && (
@@ -199,6 +220,6 @@ export default function MemberDiscounts({ state, api, act, renderActions }) {
           </form>
         </div>
       )}
-    </section>
+    </fieldset>
   );
 }
