@@ -1,3 +1,4 @@
+import { sortLotteries } from "./lotteryOrder.js";
 import { createPortal } from "react-dom";
 import React, { useEffect, useState, useRef } from "react";
 import LotteryFlag from "./LotteryFlag.jsx";
@@ -255,7 +256,7 @@ export default function ResultGrid({
     return <p className="muted">ไม่มีประเภทหวยที่ตรงกับตัวกรอง</p>;
   return (
     <div className="lottery-result-rows">
-      {lotteries.map((l) => (
+      {sortLotteries(lotteries).map((l) => (
         <LotteryResults
           key={l.id}
           lottery={l}

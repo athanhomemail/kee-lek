@@ -1,3 +1,4 @@
+import LotteryOptions from "./LotteryOptions.jsx";
 import {
   rememberDiscounts,
   reconcileDiscounts,
@@ -145,13 +146,9 @@ export default function MemberDiscounts({ state, api, act, renderActions }) {
                 reset();
               }}
             >
-              {state.lotteries
-                .filter((l) => !l.deleted_at)
-                .map((l) => (
-                  <option key={l.id} value={l.id}>
-                    {l.name}
-                  </option>
-                ))}
+              <LotteryOptions
+                items={state.lotteries.filter((l) => !l.deleted_at)}
+              />
             </select>
           </label>
           <form

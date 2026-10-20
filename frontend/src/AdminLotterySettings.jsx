@@ -1,3 +1,4 @@
+import LotteryOptions from "./LotteryOptions.jsx";
 import React, { useState } from "react";
 import { Plus, Pencil, Trash2, CalendarDays } from "lucide-react";
 import LotteryFlag from "./LotteryFlag.jsx";
@@ -89,11 +90,7 @@ export function DrawEditor({ lotteries, lotteryId, draw, onSave }) {
           <option value="" disabled>
             เลือกหวย
           </option>
-          {lotteries.map((l) => (
-            <option key={l.id} value={l.id}>
-              {l.name}
-            </option>
-          ))}
+          <LotteryOptions items={lotteries} />
         </select>
       </label>
       <label>
@@ -328,11 +325,7 @@ export default function AdminLotterySettings({
               onChange={(e) => setLotteryFilter(e.target.value)}
             >
               <option value="">ทุกประเภทหวย</option>
-              {catalog.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
+              <LotteryOptions items={catalog} />
             </select>
           </label>
           <div className="admin-status-tabs" aria-label="สถานะงวด">

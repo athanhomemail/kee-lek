@@ -1,3 +1,5 @@
+import { sortLotteries } from "./lotteryOrder.js";
+import LotteryOptions from "./LotteryOptions.jsx";
 import { offeredLotteries } from "./sales.js";
 import DiscountSummary from "./DiscountSummary.jsx";
 import MemberDiscounts from "./MemberDiscounts.jsx";
@@ -229,7 +231,8 @@ export default function App() {
     const { data } = await api.get("/state", {
       params: targetPage === "ผล" ? { view: "results" } : {},
     });
-    if (version === loadVersion.current) setState(data);
+    if (version === loadVersion.current)
+      setState({ ...data, lotteries: sortLotteries(data.lotteries) });
   };
   useEffect(() => {
     if (token && state?.user && !state.user.must_change)
@@ -366,13 +369,9 @@ export default function App() {
         <>
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">หวยทุกประเภท</option>
-            {(state?.lotteries || [])
-              .filter((l) => !l.deleted_at)
-              .map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
+            <LotteryOptions
+              items={(state?.lotteries || []).filter((l) => !l.deleted_at)}
+            />
           </select>
           <span className="muted">ดูงวดเก่าจากปุ่มย้อนหลังของแต่ละหวย</span>
         </>
@@ -381,11 +380,12 @@ export default function App() {
         <>
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">ทุกงวด</option>
-            {resultDraws(state?.draws || [], tick).map((d) => (
-              <option value={"d" + d.id} key={d.id}>
-                {d.name} {date(d.draw_date)}
-              </option>
-            ))}
+            <LotteryOptions
+              items={resultDraws(state?.draws || [], tick)}
+              lotteries={state?.lotteries || []}
+              getValue={(d) => "d" + d.id}
+              getLabel={(d) => `${d.name} ${date(d.draw_date)}`}
+            />
           </select>
           {u?.role === "Leader" && (
             <select
@@ -1739,11 +1739,7 @@ export default function App() {
                         }}
                       >
                         <option value="">ทุกประเภทหวย</option>
-                        {state.lotteries.map((l) => (
-                          <option key={l.id} value={l.id}>
-                            {l.name}
-                          </option>
-                        ))}
+                        <LotteryOptions items={state.lotteries} />
                       </select>
                     </label>
                     <label>
@@ -1753,23 +1749,25 @@ export default function App() {
                         onChange={(e) => setFilter(e.target.value)}
                       >
                         <option value="">ทุกงวด</option>
-                        {state.draws
-                          .filter(
-                            (d) =>
-                              !billLotteryId ||
-                              String(d.lottery_id) === billLotteryId,
-                          )
-                          .slice()
-                          .sort((a, b) =>
-                            String(b.draw_date).localeCompare(
-                              String(a.draw_date),
-                            ),
-                          )
-                          .map((d) => (
-                            <option key={d.id} value={"d" + d.id}>
-                              {date(d.draw_date)}
-                            </option>
-                          ))}
+                        <LotteryOptions
+                          items={state.draws
+                            .filter(
+                              (d) =>
+                                !billLotteryId ||
+                                String(d.lottery_id) === billLotteryId,
+                            )
+                            .slice()
+                            .sort((a, b) =>
+                              String(b.draw_date).localeCompare(
+                                String(a.draw_date),
+                              ),
+                            )}
+                          lotteries={state.lotteries}
+                          getValue={(d) => "d" + d.id}
+                          getLabel={(d) =>
+                            `${billLotteryId ? "" : d.name + " · "}${date(d.draw_date)}`
+                          }
+                        />
                       </select>
                     </label>
                     {u.role === "Leader" && (
@@ -2268,13 +2266,9 @@ function SettingsPage({ state, act, modal }) {
             <option value="" disabled>
               เลือกประเภทหวย
             </option>
-            {state.lotteries
-              .filter((l) => !l.deleted_at && l.enabled)
-              .map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
+            <LotteryOptions
+              items={state.lotteries.filter((l) => !l.deleted_at && l.enabled)}
+            />
           </select>
         </label>
         {!selectedLeaderLotteryId && (

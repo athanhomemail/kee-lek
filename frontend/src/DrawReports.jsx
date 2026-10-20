@@ -1,3 +1,5 @@
+import { sortLotteries } from "./lotteryOrder.js";
+import LotteryOptions from "./LotteryOptions.jsx";
 import BillCard from "./BillCard.jsx";
 import BillPages from "./BillPages.jsx";
 import React, { useState } from "react";
@@ -27,6 +29,7 @@ const pair = (v) => (
 );
 
 export default function DrawReports({ state, bills }) {
+  const lotteries = sortLotteries(state.lotteries);
   const [drawId, setDrawId] = useState("");
   const [lotteryId, setLotteryId] = useState("");
   const [billMember, setBillMember] = useState("");
@@ -45,17 +48,11 @@ export default function DrawReports({ state, bills }) {
     (a, b) =>
       String(b.draw_date).localeCompare(String(a.draw_date)) || b.id - a.id,
   );
-  const candidates = resultColumns(state.draws, state.lotteries)
+  const candidates = resultColumns(state.draws, lotteries)
     .map((c) => c.current)
     .filter(Boolean);
-  const initial =
-    candidates.find((d) => drawBills(bills, d.id).length) ||
-    candidates[0] ||
-    draws[0];
   const lottery =
-    state.lotteries.find((l) => String(l.id) === lotteryId) ||
-    state.lotteries.find((l) => l.id === initial?.lottery_id) ||
-    state.lotteries[0];
+    lotteries.find((l) => String(l.id) === lotteryId) || lotteries[0];
   const lotteryDraws = draws.filter((d) => d.lottery_id === lottery?.id);
   const defaultDraw =
     candidates.find((d) => d.lottery_id === lottery?.id) || lotteryDraws[0];
@@ -197,14 +194,8 @@ export default function DrawReports({ state, bills }) {
                 setDraft({ top3: "", top2: "", bottom2: "" });
               }}
             >
-              {!state.lotteries.length && (
-                <option value="">ไม่มีประเภทหวย</option>
-              )}
-              {state.lotteries.map((l) => (
-                <option key={l.id} value={l.id}>
-                  {l.name}
-                </option>
-              ))}
+              {!lotteries.length && <option value="">ไม่มีประเภทหวย</option>}
+              <LotteryOptions items={lotteries} />
             </select>
           </label>
           <label>

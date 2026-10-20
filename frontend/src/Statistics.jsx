@@ -1,3 +1,4 @@
+import LotteryOptions from "./LotteryOptions.jsx";
 import DiscountSummary from "./DiscountSummary.jsx";
 import React, { useState } from "react";
 import DrawReports from "./DrawReports.jsx";
@@ -96,11 +97,11 @@ export default function Statistics({ state, bills, filters }) {
                   {!draws.length && (
                     <option value="">ไม่มีงวดที่มียอดซื้อ</option>
                   )}
-                  {draws.map((d) => (
-                    <option key={d.id} value={d.id}>
-                      {drawLabel(d)}
-                    </option>
-                  ))}
+                  <LotteryOptions
+                    items={draws}
+                    lotteries={state.lotteries}
+                    getLabel={drawLabel}
+                  />
                 </select>
               </label>
               <label>
