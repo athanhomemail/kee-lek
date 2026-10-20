@@ -5,7 +5,7 @@ import { randomBytes } from "node:crypto";
 import { db } from "../src/db.js";
 const enabled = process.env.RUN_INTEGRATION === "1";
 test(
-  "API records without credit or discounts, concurrency, editing and cancellation",
+  "API advisory discounts, full-price accounting, authorization, concurrency and editing",
   { skip: !enabled },
   async () => {
     const root = "test_" + randomBytes(6).toString("hex"),
@@ -257,6 +257,86 @@ test(
         ).status,
         200,
       );
+      const discountRates = {
+        "2top": 10,
+        "2bottom": 5,
+        "3top": 20,
+        "3tod": 3,
+        runTop: 1,
+        runBottom: 0,
+      };
+      const discountBody = {
+        memberIds: [member1, member2],
+        lotteryId: lottery,
+        rates: discountRates,
+      };
+      assert.equal(
+        (await api("/member-discounts", members[0].token, discountBody)).status,
+        403,
+      );
+      assert.equal(
+        (await api("/member-discounts", a, discountBody)).status,
+        403,
+      );
+      assert.equal(
+        (
+          await api("/member-discounts", l, {
+            ...discountBody,
+            memberIds: [member1, admin],
+          })
+        ).status,
+        400,
+      );
+      assert.equal(
+        (await api("/state", l)).data.memberDiscounts.length,
+        0,
+        "invalid bulk update is atomic",
+      );
+      assert.equal(
+        (await api("/member-discounts", l, discountBody)).status,
+        200,
+      );
+      assert.equal((await api("/state", l)).data.memberDiscounts.length, 2);
+      assert.equal(
+        (await api("/state", members[0].token)).data.memberDiscounts.length,
+        1,
+      );
+      assert.equal(
+        (
+          await api("/settings/" + lottery, l, {
+            ...settings,
+            lak: { rates: settings.rates, limit: 1000, limits: Object.fromEntries(Object.keys(settings.rates).map(k => [k,1000])) },
+          })
+        ).status,
+        200,
+      );
+      const kipBill = {
+        draw_id: draw,
+        currency: "LAK",
+        items: [{ number: "23", type: "2top", amount: 12.5 }],
+      };
+      const kipResponse = await api("/bills", members[0].token, kipBill);
+      assert.equal(kipResponse.status, 200, JSON.stringify(kipResponse.data));
+      const kipRecord = (await api("/state", members[0].token)).data.bills.find(
+        (b) => b.id === kipResponse.data.id,
+      );
+      assert.equal(kipRecord.currency, "LAK");
+      assert.equal(kipRecord.net, 12.5);
+      assert.deepEqual(kipRecord.discountRates, discountRates);
+      // Simulate a legacy bill: no snapshot must remain zero even when edited.
+      await q("DELETE FROM bill_discount_snapshots WHERE bill_id=?", [
+        kipRecord.id,
+      ]);
+      assert.equal(
+        (await api("/bills/" + kipRecord.id, members[0].token, kipBill)).status,
+        200,
+      );
+      assert.deepEqual(
+        (await api("/state", members[0].token)).data.bills.find(
+          (b) => b.id === kipRecord.id,
+        ).discountRates,
+        {},
+      );
       const bill = {
         draw_id: draw,
         items: [
@@ -269,6 +349,23 @@ test(
       const billId = r.data.id;
       assert.equal((await api("/me", members[0].token)).data.credit, undefined);
       const recorded = (await api("/state", members[0].token)).data.bills.find((b) => b.id === billId);
+      assert.deepEqual(recorded.discountRates, discountRates);
+      assert.equal(
+        (
+          await api("/member-discounts", l, {
+            ...discountBody,
+            memberIds: [member1],
+            rates: { ...discountRates, "2top": 25 },
+          })
+        ).status,
+        200,
+      );
+      assert.equal(
+        (await api("/state", members[1].token)).data.memberDiscounts[0].rates[
+          "2top"
+        ],
+        10,
+      );
       assert.equal(recorded.gross, 300);
       assert.equal(recorded.net, 300);
       assert.ok(recorded.items.every((i) => !Object.hasOwn(i, "discount")));
@@ -286,6 +383,13 @@ test(
           })
         ).status,
         200,
+      );
+      assert.deepEqual(
+        (await api("/state", members[0].token)).data.bills.find(
+          (b) => b.id === billId,
+        ).discountRates,
+        discountRates,
+        "editing retains original rates",
       );
       assert.equal((await q("SELECT credit FROM users WHERE id=?", [member1]))[0].credit, 0);
       assert.equal(

@@ -1,3 +1,5 @@
+import BillCard from "./BillCard.jsx";
+import BillPages from "./BillPages.jsx";
 import React, { useState } from "react";
 import { labels } from "./keying.js";
 import {
@@ -27,6 +29,8 @@ const pair = (v) => (
 export default function DrawReports({ state, bills }) {
   const [drawId, setDrawId] = useState("");
   const [lotteryId, setLotteryId] = useState("");
+  const [billMember, setBillMember] = useState("");
+  const [billCurrency, setBillCurrency] = useState("ALL");
   const [tab, setTab] = useState("numbers");
   const [currency, setCurrency] = useState("THB");
   const [type, setType] = useState("");
@@ -162,6 +166,7 @@ export default function DrawReports({ state, bills }) {
           ["numbers", "ความเสี่ยง / เลขที่ต้องเฝ้าดู"],
           ["actual", "ยอดจริงในงวด"],
           ["winners", "บิลที่ถูกรางวัล"],
+          ["bills", "บิลและส่วนลด"],
           ["simulation", "ลองใส่ผลหวย"],
           ["member", "ยอดซื้อรายสมาชิก"],
           ...(state.user.role === "Leader"
@@ -258,6 +263,65 @@ export default function DrawReports({ state, bills }) {
           <DailyPerformance state={state} />
         ) : !draw ? (
           <p>ยังไม่มีงวดหวย</p>
+        ) : tab === "bills" ? (
+          <>
+            <h3>ยอดเรียกเก็บและส่วนลดรายบิล</h3>
+            <p>
+              ยอดส่วนลดเป็นข้อมูลประกอบการตกลงกับลูกค้า
+              โดยยอดขายและเงินรางวัลยังใช้ยอดเต็ม
+            </p>
+            <div className="toolbar">
+              <label>
+                สกุลเงิน
+                <select
+                  value={billCurrency}
+                  onChange={(e) => setBillCurrency(e.target.value)}
+                >
+                  <option value="ALL">บาทและกีบ</option>
+                  <option value="THB">บาท</option>
+                  <option value="LAK">K กีบ</option>
+                </select>
+              </label>
+              {state.user.role !== "Member" && (
+                <label>
+                  สมาชิก
+                  <select
+                    value={billMember}
+                    onChange={(e) => setBillMember(e.target.value)}
+                  >
+                    <option value="">ทุกคน</option>
+                    {[
+                      ...new Map(
+                        selected.map((b) => [
+                          String(b.member_id),
+                          b.member_name,
+                        ]),
+                      ).entries(),
+                    ].map(([id, name]) => (
+                      <option key={id} value={id}>
+                        {name || `สมาชิก #${id}`}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
+            </div>
+            <BillPages
+              key={`${draw.id}-${billCurrency}-${billMember}`}
+              bills={selected
+                .filter(
+                  (b) =>
+                    (!billMember || String(b.member_id) === billMember) &&
+                    (billCurrency === "ALL" ||
+                      (b.currency || b.items?.[0]?.currency || "THB") ===
+                        billCurrency),
+                )
+                .slice()
+                .sort((a, b) => b.id - a.id)}
+              renderBill={(b) => <BillCard key={b.id} b={b} state={state} />}
+              empty={<p>ไม่มีบิลตามตัวกรอง</p>}
+            />
+          </>
         ) : tab === "numbers" ? (
           <>
             <div className="risk-filter-title">

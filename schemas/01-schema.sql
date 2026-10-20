@@ -11,3 +11,19 @@ CREATE TABLE notifications (id BIGINT PRIMARY KEY AUTO_INCREMENT, user_id BIGINT
 CREATE TABLE credit_ledger (id BIGINT PRIMARY KEY AUTO_INCREMENT, member_id BIGINT NOT NULL, actor_id BIGINT NOT NULL, amount DECIMAL(14,2) NOT NULL, reason VARCHAR(150) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);
 INSERT INTO lotteries(name,kind,flag,enabled) VALUES ('หวยรัฐบาล','หวยไทย','🇹🇭',1),('หวยออมสิน','หวยไทย','🇹🇭',0),('หวยลาว','หวยนอก','🇱🇦',1),('หวยฮานอย','หวยนอก','🇻🇳',0);
 CREATE TABLE draw_settings (leader_id BIGINT NOT NULL, draw_id BIGINT NOT NULL, config JSON NOT NULL, PRIMARY KEY(leader_id,draw_id), FOREIGN KEY(draw_id) REFERENCES draws(id));
+
+CREATE TABLE IF NOT EXISTS member_discounts (
+  leader_id BIGINT NOT NULL,
+  member_id BIGINT NOT NULL,
+  lottery_id BIGINT NOT NULL,
+  rates JSON NOT NULL,
+  PRIMARY KEY (member_id, lottery_id),
+  FOREIGN KEY (leader_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (member_id) REFERENCES users(id) ON DELETE CASCADE,
+  FOREIGN KEY (lottery_id) REFERENCES lotteries(id) ON DELETE CASCADE
+);
+CREATE TABLE IF NOT EXISTS bill_discount_snapshots (
+  bill_id BIGINT PRIMARY KEY,
+  rates JSON NOT NULL,
+  FOREIGN KEY (bill_id) REFERENCES bills(id) ON DELETE CASCADE
+);

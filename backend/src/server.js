@@ -1,3 +1,4 @@
+import { validateDiscountRates } from "./discounts.js";
 import {
   createPasswordVault,
   ensurePasswordVaultSchema,
@@ -220,6 +221,26 @@ app.get(
     const settings = await query("SELECT * FROM settings WHERE leader_id=?", [
       leader,
     ]);
+    const memberDiscounts =
+      u.role === "Admin"
+        ? []
+        : await query(
+            "SELECT member_id,lottery_id,rates FROM member_discounts WHERE leader_id=?" +
+              (u.role === "Member" ? " AND member_id=?" : ""),
+            u.role === "Member" ? [leader, u.id] : [leader],
+          );
+    const discountSnapshots = await query(
+      "SELECT s.bill_id,s.rates FROM bill_discount_snapshots s JOIN bills b ON b.id=s.bill_id" +
+        (u.role === "Admin"
+          ? ""
+          : u.role === "Leader"
+            ? " WHERE b.leader_id=?"
+            : " WHERE b.member_id=?"),
+      u.role === "Admin" ? [] : [u.id],
+    );
+    const discountsByBill = new Map(
+      discountSnapshots.map((s) => [s.bill_id, s.rates]),
+    );
     const exchangeRates = await query(
       u.role === "Admin"
         ? "SELECT leader_id,JSON_EXTRACT(config,'$.exchangeRate') AS rate FROM settings WHERE lottery_id=0"
@@ -259,10 +280,12 @@ app.get(
       users: users.map(clean),
       bills: bills.map((b) => ({
         ...b,
+        discountRates: discountsByBill.get(b.id) || {},
         currency: billCurrency(b),
         items: b.items.map(({ discount, ...item }) => item),
         win: winnings(b, draws.find((d) => d.id === b.draw_id) || {}),
       })),
+      memberDiscounts,
       exchangeRates,
       settings: settings.map((s) => ({ ...s, config: cleanConfig(s.config) })),
       drawSettings: draws.map((d) => ({
@@ -721,6 +744,59 @@ app.post(
   }),
 );
 app.post(
+  "/api/member-discounts",
+  role(["Leader"]),
+  route(async (req, res) => {
+    const { memberIds, lotteryId, rates } = req.body;
+    if (
+      !Array.isArray(memberIds) ||
+      !memberIds.length ||
+      memberIds.length > 1000 ||
+      memberIds.some((id) => !Number.isSafeInteger(id) || id <= 0) ||
+      !Number.isSafeInteger(lotteryId)
+    )
+      throw Error("กรุณาเลือกสมาชิกและประเภทหวย");
+    const validated = validateDiscountRates(rates);
+    const ids = [...new Set(memberIds)].sort((a, b) => a - b);
+    const c = await db.getConnection();
+    try {
+      await c.beginTransaction();
+      await query(
+        "SELECT id FROM users WHERE id=? FOR UPDATE",
+        [req.user.id],
+        c,
+      );
+      const members = await query(
+        "SELECT id FROM users WHERE leader_id=? AND role='Member' AND active=1 AND id IN (?) FOR UPDATE",
+        [req.user.id, ids],
+        c,
+      );
+      if (members.length !== ids.length)
+        throw Error("มีสมาชิกที่ไม่มีสิทธิ์ตั้งค่าส่วนลด");
+      const [lottery] = await query(
+        "SELECT id FROM lotteries WHERE id=?",
+        [lotteryId],
+        c,
+      );
+      if (!lottery) throw Error("ไม่พบประเภทหวย");
+      for (const id of ids)
+        await query(
+          "INSERT INTO member_discounts(leader_id,member_id,lottery_id,rates) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE rates=VALUES(rates)",
+          [req.user.id, id, lotteryId, JSON.stringify(validated)],
+          c,
+        );
+      await c.commit();
+      changed(req.user.id);
+      res.json({ ok: true });
+    } catch (e) {
+      await c.rollback();
+      throw e;
+    } finally {
+      c.release();
+    }
+  }),
+);
+app.post(
   ["/api/bills", "/api/bills/:id"],
   role(["Member"]),
   route(async (req, res) => {
@@ -809,6 +885,27 @@ app.post(
           ],
           c,
         );
+      const [discountSetting] = await query(
+        "SELECT rates FROM member_discounts WHERE member_id=? AND lottery_id=? AND leader_id=?",
+        [member.id, draw.lottery_id, leader.id],
+        c,
+      );
+      const [snapshot] = previous
+        ? await query(
+            "SELECT rates FROM bill_discount_snapshots WHERE bill_id=?",
+            [previous.id],
+            c,
+          )
+        : [];
+      // Editing retains the original rates; legacy bills remain at zero.
+      const discountRates = previous
+        ? snapshot?.rates || {}
+        : discountSetting?.rates || {};
+      await query(
+        "INSERT INTO bill_discount_snapshots(bill_id,rates) VALUES (?,?) ON DUPLICATE KEY UPDATE rates=VALUES(rates)",
+        [r.insertId, JSON.stringify(discountRates)],
+        c,
+      );
       await notify(
         leader.id,
         member.name +

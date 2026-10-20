@@ -1,3 +1,5 @@
+import { calculateDiscount } from "./discounts.js";
+import DiscountSummary from "./DiscountSummary.jsx";
 import React, { useState } from "react";
 import { ChevronDown, UserRound, Trash2, Pencil } from "lucide-react";
 import LotteryFlag from "./LotteryFlag.jsx";
@@ -74,6 +76,13 @@ export default function BillCard({ b, state, cancel, edit }) {
             {money(b.gross)} <span>{unit}</span>
           </b>
           <small>{b.items.length} รายการ</small>
+          {b.status !== "cancelled" && (
+            <small>
+              ส่วนลดที่ให้ได้{" "}
+              {money(calculateDiscount(b.items, b.discountRates).discount)}{" "}
+              {unit}
+            </small>
+          )}
         </div>
         <div className="bill-card-result">
           <span className={`bill-status bill-status-${result}`}>{status}</span>
@@ -113,6 +122,14 @@ export default function BillCard({ b, state, cancel, edit }) {
               {money(b.net ?? b.gross)} {unit}
             </b>
           </p>
+          {b.status !== "cancelled" && (
+            <DiscountSummary
+              items={b.items}
+              rates={b.discountRates}
+              currency={currency}
+              details
+            />
+          )}
           <div className="bill-items-scroll">
             <table className="bill-items-table">
               <thead>

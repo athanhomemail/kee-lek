@@ -1,3 +1,4 @@
+import DiscountSummary from "./DiscountSummary.jsx";
 import React, { useState } from "react";
 import DrawReports from "./DrawReports.jsx";
 import { labels } from "./keying.js";
@@ -218,10 +219,18 @@ export default function Statistics({ state, bills, filters }) {
                 const draw = state.draws.find((d) => d.id === b.draw_id);
                 return (
                   <div className="item" key={b.id}>
-                    <span>
+                    <div>
                       #{b.id} · {draw?.name} ·{" "}
                       {amount(b.gross, reportCurrencyOf(b))}
-                    </span>
+                      {b.status !== "cancelled" && (
+                        <DiscountSummary
+                          items={b.items}
+                          rates={b.discountRates}
+                          currency={reportCurrencyOf(b)}
+                          details
+                        />
+                      )}
+                    </div>
                     <b>
                       {b.status === "cancelled"
                         ? "ยกเลิก"

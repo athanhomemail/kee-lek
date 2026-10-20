@@ -1,3 +1,5 @@
+import DiscountSummary from "./DiscountSummary.jsx";
+import MemberDiscounts from "./MemberDiscounts.jsx";
 import Bill from "./BillCard.jsx";
 import BillPages from "./BillPages.jsx";
 import AccountProfile from "./AccountProfile.jsx";
@@ -1564,6 +1566,22 @@ export default function App() {
                             maxLength={500}
                           />
                         </label>
+                        <DiscountSummary
+                          items={items}
+                          currency={currency}
+                          details
+                          rates={
+                            editId
+                              ? state.bills.find((b) => b.id === editId)
+                                  ?.discountRates || {}
+                              : state.memberDiscounts?.find(
+                                  (r) =>
+                                    String(r.member_id) === String(u.id) &&
+                                    String(r.lottery_id) ===
+                                      String(draw?.lottery_id),
+                                )?.rates || {}
+                          }
+                        />
                         <div className="totals">
                           <p>
                             ลูกค้าต้องจ่าย <b>{amountText(total, currency)}</b>
@@ -1926,6 +1944,7 @@ function Team({ state, act, modal }) {
           <Plus size={17} /> เพิ่มสมาชิก
         </button>
       </div>
+      <MemberDiscounts state={state} api={api} act={act} />
       {state.users
         .filter((m) => m.role === "Member" && m.active)
         .map((m) => (
