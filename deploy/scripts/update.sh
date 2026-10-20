@@ -9,5 +9,6 @@ fi
 sh deploy/scripts/backup.sh
 git pull --ff-only origin main
 sh deploy/scripts/migrate-member-discounts.sh
+sh deploy/scripts/migrate-lottery-catalog.sh
 docker compose --env-file deploy/.env -f deploy/compose.yml up -d --build --wait
 printf '%s\n' 'Updated. Check https://keelek.kuayrai.com and review service logs.'

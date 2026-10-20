@@ -3374,3 +3374,77 @@ footer {
   .bill-pagination { padding: 12px; }
   .bill-pagination-actions { width: 100%; gap: 8px; }
 }
+
+/* Compact, equal-size result cards and lazy history dialog. */
+.lottery-result-rows { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,260px),1fr)); align-items:stretch; gap:14px; }
+.result-tile { min-width:0; display:grid; grid-template-rows:40px 20px 68px 32px; gap:10px; padding:14px; border:1px solid var(--palette-border-eee8f0,#eee8f0); border-radius:14px; background:var(--palette-surface-ffffff,#fff); }
+.result-tile-heading { display:flex; align-items:center; gap:9px; min-width:0; }
+.result-tile-heading > img { width:26px; height:26px; flex-shrink:0; }
+.result-tile-heading > div { min-width:0; }
+.result-tile-heading h2 { font-size:16px; line-height:1.3; margin:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.result-tile-heading small { font-size:11px; opacity:.65; }
+.result-tile-date { margin:0; font-size:12px; opacity:.7; line-height:20px; }
+.result-tile-numbers { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+.result-tile-numbers > div { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:4px; border-radius:9px; background:var(--palette-surface-fff0db,#fff0db); }
+.result-tile-numbers small { font-size:11px; opacity:.75; }
+.result-tile-numbers strong { font-size:25px; line-height:1.2; letter-spacing:1px; font-variant-numeric:tabular-nums; }
+.result-tile > .result-tile-actions { display:flex; align-items:stretch; gap:8px; padding:0; margin:0; border:0; background:none; }
+.result-tile-actions button { flex:1; min-width:0; padding:5px 8px; font-size:12px; line-height:20px; border-radius:8px; white-space:nowrap; }
+.result-tile-actions > span { font-size:11px; align-self:center; }
+.result-history-modal { width:min(900px,calc(100vw - 32px)); max-width:none; max-height:calc(100dvh - 48px); padding:0; margin:auto; border:1px solid var(--palette-border-eee8f0,#eee8f0); border-radius:18px; color:inherit; background:var(--palette-surface-ffffff,#fff); box-shadow:0 24px 80px #0004; }
+.result-history-modal::backdrop { background:rgb(15 12 22 / .65); backdrop-filter:blur(3px); }
+.result-history-modal-body { display:flex; flex-direction:column; max-height:calc(100dvh - 50px); }
+.result-history-modal-heading { display:flex; justify-content:space-between; align-items:center; gap:14px; padding:18px 20px; border-bottom:1px solid var(--palette-border-eee8f0,#eee8f0); }
+.result-history-modal-heading h2 { font-size:18px; margin:0; }
+.result-history-modal-heading p { font-size:12px; margin:4px 0 0; }
+.result-history-modal-heading > button { flex-shrink:0; padding:6px 10px; }
+.result-history-modal-content { overflow:auto; padding:16px 20px; min-height:140px; }
+.result-history-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,240px),1fr)); gap:12px; }
+.result-history-empty { padding:24px 0; text-align:center; }
+.result-history-pagination { display:flex; align-items:center; justify-content:space-between; padding:12px 20px; gap:12px; border-top:1px solid var(--palette-border-eee8f0,#eee8f0); }
+.result-history-pagination button { padding:7px 12px; font-size:13px; }
+.result-history-pagination span { font-size:12px; }
+@media(max-width:600px) {
+  .lottery-result-rows { grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+  .result-tile { grid-template-rows:36px 18px 58px 30px; padding:10px; gap:8px; }
+  .result-tile-heading { gap:6px; }
+  .result-tile-heading > img { width:22px; height:22px; }
+  .result-tile-heading h2 { font-size:13px; }
+  .result-tile-heading small, .result-tile-numbers small { font-size:10px; }
+  .result-tile-date { font-size:10px; }
+  .result-tile-numbers { gap:4px; }
+  .result-tile-numbers strong { font-size:21px; }
+  .result-tile-actions button { font-size:10px; padding:4px; }
+  .result-history-modal-heading, .result-history-modal-content { padding:14px; }
+  .result-history-pagination { padding:10px 14px; }
+}
+@media(max-width:359px) { .lottery-result-rows { grid-template-columns:1fr; } }
+.leader-sales-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(180px,1fr)); gap:10px; margin:14px 0; }
+.leader-sales-list label { display:flex; align-items:center; gap:8px; padding:10px; border:1px solid var(--border,#ddd); border-radius:10px; }
+.leader-sales-list input { width:18px; height:18px; flex-shrink:0; }
+.member-discounts { border:0; padding:0; margin:12px 0 0; }
+.member-list-toolbar { display:flex; gap:8px; align-items:center; margin:12px 0; }
+.member-list-toolbar input { flex:1; min-width:0; }
+.member-list-toolbar button { white-space:nowrap; }
+.compact-members { max-height:420px; overflow:auto; }
+.compact-member { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:10px 0; border-bottom:1px solid var(--border,#ddd); }
+.compact-member > label { display:flex; align-items:center; gap:10px; min-width:0; }
+.compact-member input { width:17px; height:17px; flex-shrink:0; }
+.compact-member small { display:block; opacity:.7; font-size:12px; }
+.member-row-actions { display:flex; gap:6px; flex-shrink:0; }
+.member-row-actions button { padding:7px 9px; font-size:12px; }
+.member-discount-editor { border:1px solid var(--border,#ddd); border-radius:12px; padding:14px; margin-top:14px; }
+.member-discount-editor h3 { font-size:16px; margin:0; }
+.member-discount-editor .discount-rate-grid { grid-template-columns:repeat(3,minmax(0,1fr)); }
+.discount-total { display:flex; justify-content:space-between; gap:12px; }
+.discount-mode-list { display:flex; gap:6px 14px; flex-wrap:wrap; margin:8px 0; font-size:12px; }
+.discount-mode-list > span { padding:4px 8px; border-radius:6px; background:var(--surface,#f5f3ef); }
+.compact-discount p { font-size:12px; margin:8px 0 0; }
+@media(max-width:600px) {
+  .compact-member { flex-wrap:wrap; gap:8px; }
+  .member-row-actions { margin-left:27px; }
+  .member-discount-editor .discount-rate-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+.result-tile > .result-tile-heading { height:auto; padding:0; border:0; background:none; justify-content:flex-start; }
+.result-history-modal-heading { height:auto; background:none; flex-shrink:0; }
+.result-history-pagination { flex-shrink:0; }

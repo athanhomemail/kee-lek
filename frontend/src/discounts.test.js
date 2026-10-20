@@ -53,3 +53,24 @@ test("all six modes, currencies, per-line rounding, and full discount", () => {
   assert.equal(result.discount, 0.02);
   assert.equal(result.payable, 0.08);
 });
+
+test("compact mode groups preserve per-line rounding and bill totals", async () => {
+  const { discountGroups } = await import("./discounts.js");
+  const result = calculateDiscount(
+    [
+      { type: "3top", amount: 100 },
+      { type: "2top", amount: 0.05 },
+      { type: "2top", amount: 0.05 },
+    ],
+    { "3top": 20, "2top": 10 },
+  );
+  const groups = discountGroups(result);
+  assert.deepEqual(groups, [
+    { type: "3top", percent: 20, discountAmount: 20 },
+    { type: "2top", percent: 10, discountAmount: 0.02 },
+  ]);
+  assert.equal(
+    Math.round(groups.reduce((s, r) => s + r.discountAmount, 0) * 100) / 100,
+    result.discount,
+  );
+});

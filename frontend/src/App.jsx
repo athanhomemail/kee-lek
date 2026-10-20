@@ -1,3 +1,4 @@
+import { offeredLotteries } from "./sales.js";
 import DiscountSummary from "./DiscountSummary.jsx";
 import MemberDiscounts from "./MemberDiscounts.jsx";
 import Bill from "./BillCard.jsx";
@@ -220,10 +221,22 @@ export default function App() {
     };
   }, []);
   api.defaults.headers.common.Authorization = token ? "Bearer " + token : "";
-  const load = async () => {
-    const { data } = await api.get("/state");
-    setState(data);
+  const pageRef = useRef(page);
+  pageRef.current = page;
+  const loadVersion = useRef(0);
+  const load = async (targetPage = pageRef.current) => {
+    const version = ++loadVersion.current;
+    const { data } = await api.get("/state", {
+      params: targetPage === "ผล" ? { view: "results" } : {},
+    });
+    if (version === loadVersion.current) setState(data);
   };
+  useEffect(() => {
+    if (token && state?.user && !state.user.must_change)
+      load().catch((e) =>
+        message(e.response?.data?.error || "โหลดข้อมูลไม่สำเร็จ"),
+      );
+  }, [page]);
   const message = (t) => setModal({ title: t });
   const act = async (fn) => {
     setBusy(true);
@@ -245,7 +258,7 @@ export default function App() {
         setState({ user: data });
         setPage(homePage(data.role));
         if (!data.must_change)
-          load().catch((e) =>
+          load(homePage(data.role)).catch((e) =>
             message(e.response?.data?.error || "เชื่อมต่อไม่ได้"),
           );
       })
@@ -276,7 +289,12 @@ export default function App() {
     );
     return () => clearTimeout(timer);
   }, [state?.draws]);
+  const resultDay = new Date(tick + 7 * 3600000).toISOString().slice(0, 10);
+  useEffect(() => {
+    if (token && state?.view === "results") load().catch(() => {});
+  }, [resultDay]);
   const logout = () => {
+    ++loadVersion.current;
     setPage("ผล");
     setFilter("");
     setMemberFilter("");
@@ -288,6 +306,7 @@ export default function App() {
     setToken("");
     setState(null);
   };
+  const saleLotteries = offeredLotteries(state);
   const u = state?.user,
     draw = state?.draws?.find((d) => String(d.id) === String(drawId)),
     base = state?.settings?.find(
@@ -347,13 +366,15 @@ export default function App() {
         <>
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">หวยทุกประเภท</option>
-            {(state?.lotteries || []).map((l) => (
-              <option key={l.id} value={l.id}>
-                {l.name}
-              </option>
-            ))}
+            {(state?.lotteries || [])
+              .filter((l) => !l.deleted_at)
+              .map((l) => (
+                <option key={l.id} value={l.id}>
+                  {l.name}
+                </option>
+              ))}
           </select>
-          <span className="muted">ผลย้อนหลัง · เรียงตามงวดล่าสุด</span>
+          <span className="muted">ดูงวดเก่าจากปุ่มย้อนหลังของแต่ละหวย</span>
         </>
       )}
       {page === "โพย" && (
@@ -792,7 +813,7 @@ export default function App() {
                 เปลี่ยนรหัสผ่าน
               </button>
             </section>
-          ) : !state.draws ? (
+          ) : !state.draws || (page === "ผล") !== (state.view === "results") ? (
             <p>กำลังโหลดข้อมูล…</p>
           ) : (
             <>
@@ -820,7 +841,16 @@ export default function App() {
                       });
                     }}
                     draws={state.draws}
-                    lotteries={state.lotteries || []}
+                    lotteries={(state.lotteries || []).filter(
+                      (l) =>
+                        !l.deleted_at &&
+                        (!filter || String(l.id) === filter) &&
+                        (!kindFilter || l.kind === kindFilter),
+                    )}
+                    api={api}
+                    from={from}
+                    to={to}
+                    revision={state}
                     now={tick}
                     matches={(d) =>
                       matches(d) && (!filter || String(d.lottery_id) === filter)
@@ -838,7 +868,7 @@ export default function App() {
                       <section className="lottery-selection" key={kind}>
                         <h2 className="section-title">{kind}</h2>
                         <div className="cards lottery-selection-cards">
-                          {state.lotteries
+                          {saleLotteries
                             .filter((l) => l.kind === kind)
                             .map((l) => {
                               const d = nextDraws(state.draws, tick).find(
@@ -1944,52 +1974,49 @@ function Team({ state, act, modal }) {
           <Plus size={17} /> เพิ่มสมาชิก
         </button>
       </div>
-      <MemberDiscounts state={state} api={api} act={act} />
-      {state.users
-        .filter((m) => m.role === "Member" && m.active)
-        .map((m) => (
-          <div className="item network-member" key={m.id}>
-            <span className="avatar">{m.name[0]}</span>
-            <div className="member-identity">
-              {m.name}
-              <small>
-                {m.username} · {m.phone}
-              </small>
-            </div>
+      <MemberDiscounts
+        state={state}
+        api={api}
+        act={act}
+        renderActions={(m) => (
+          <>
             <UserPasswordAccess person={m} api={api} act={act} modal={modal} />
             <button
               className="danger"
+              aria-label={`ลบสมาชิก ${m.name}`}
               onClick={() =>
                 modal({
                   title: `ลบบัญชี ${m.name}?`,
                   content: (
                     <p>
-                      สมาชิกจะเข้าใช้งานไม่ได้ และถูกนำออกจากรายชื่อสมาชิก
-                      บิลและประวัติย้อนหลังยังคงอยู่ในรายงาน
+                      สมาชิกจะเข้าใช้งานไม่ได้ บิลและประวัติย้อนหลังยังคงอยู่
                     </p>
                   ),
                   confirm: () =>
                     act(async () => {
-                      await api.delete("/users/" + m.id);
+                      await api.delete(`/users/${m.id}`);
                       modal(null);
                     }),
                 })
               }
             >
-              ลบบัญชี
+              <Trash2 size={15} /> ลบ
             </button>
-          </div>
-        ))}
+          </>
+        )}
+      />
     </section>
   );
 }
 function SettingsPage({ state, act, modal }) {
+  const [busySales, setBusySales] = useState(null);
   const [adminTab, setAdminTab] = useState("leaders");
   const [leaderLotteryId, setLeaderLotteryId] = useState("");
   const selectedLeaderLotteryId = String(
-    state.lotteries.find((l) => l.enabled && String(l.id) === leaderLotteryId)
-      ?.id ??
-      state.lotteries.find((l) => l.enabled)?.id ??
+    state.lotteries.find(
+      (l) => !l.deleted_at && l.enabled && String(l.id) === leaderLotteryId,
+    )?.id ??
+      state.lotteries.find((l) => !l.deleted_at && l.enabled)?.id ??
       "",
   );
   const [search, setSearch] = useState("");
@@ -2192,7 +2219,46 @@ function SettingsPage({ state, act, modal }) {
   ) : (
     <>
       <section className="panel">
-        <h2>ตั้งค่าประเภทหวย</h2>
+        <h2>หวยที่เปิดขาย</h2>
+        <div className="leader-sales-list">
+          {state.lotteries
+            .filter((l) => !l.deleted_at)
+            .map((l) => {
+              const selling =
+                state.settings.find((s) => s.lottery_id === l.id)?.config
+                  ?.selling !== false;
+              return (
+                <label key={l.id}>
+                  <input
+                    type="checkbox"
+                    checked={selling}
+                    disabled={busySales === l.id}
+                    onChange={(e) => {
+                      const value = e.target.checked;
+                      setBusySales(l.id);
+                      act(async () => {
+                        try {
+                          await api.patch(`/lotteries/${l.id}/sales`, {
+                            selling: value,
+                          });
+                        } finally {
+                          setBusySales(null);
+                        }
+                      });
+                    }}
+                  />
+                  <span>
+                    {l.name}
+                    {!l.enabled && <small> · ระบบกลางปิดรับ</small>}
+                  </span>
+                </label>
+              );
+            })}
+        </div>
+        <p className="muted">
+          ปิดขายแล้วจะซ่อนจากหน้าผลและหน้าคีย์ของทั้งเครือข่าย ประวัติบิลยังอยู่
+        </p>
+        <h3>ตั้งค่าอัตราจ่ายและเวลาปิดรับ</h3>
         <label>
           เลือกหวยที่ต้องการจัดการ
           <select
@@ -2203,7 +2269,7 @@ function SettingsPage({ state, act, modal }) {
               เลือกประเภทหวย
             </option>
             {state.lotteries
-              .filter((l) => l.enabled)
+              .filter((l) => !l.deleted_at && l.enabled)
               .map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
@@ -2219,11 +2285,18 @@ function SettingsPage({ state, act, modal }) {
         )}
       </section>
       {state.lotteries
-        .filter((l) => l.enabled && String(l.id) === selectedLeaderLotteryId)
+        .filter(
+          (l) =>
+            !l.deleted_at &&
+            l.enabled &&
+            String(l.id) === selectedLeaderLotteryId,
+        )
         .map((l) => {
-          const c =
-            state.settings.find((s) => s.lottery_id === l.id)?.config ||
-            state.defaults;
+          const c = {
+            ...state.defaults,
+            ...(state.settings.find((s) => s.lottery_id === l.id)?.config ||
+              {}),
+          };
           return (
             <section className="panel" key={l.id}>
               <h2>
@@ -2302,7 +2375,12 @@ function SettingsPage({ state, act, modal }) {
           );
         })}
       {state.lotteries
-        .filter((l) => l.enabled && String(l.id) === selectedLeaderLotteryId)
+        .filter(
+          (l) =>
+            !l.deleted_at &&
+            l.enabled &&
+            String(l.id) === selectedLeaderLotteryId,
+        )
         .map((lottery) => (
           <DrawRulesCard
             key={lottery.id}

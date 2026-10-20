@@ -1,3 +1,9 @@
+import {
+  bangkokToday,
+  hideUnpublished,
+  currentResultsSql,
+  teamSalesSql,
+} from "./lottery-catalog.js";
 import { validateDiscountRates } from "./discounts.js";
 import {
   createPasswordVault,
@@ -188,11 +194,137 @@ app.post(
   }),
 );
 app.get(
+  "/api/lotteries/:id/history",
+  route(async (req, res) => {
+    const id = Number(req.params.id),
+      leader = req.user.leader_id || req.user.id;
+    if (!Number.isSafeInteger(id) || id <= 0)
+      throw Error("ประเภทหวยไม่ถูกต้อง");
+    const [lottery] = await query(
+      "SELECT l.*,s.config FROM lotteries l LEFT JOIN settings s ON s.lottery_id=l.id AND s.leader_id=? WHERE l.id=? AND l.deleted_at IS NULL",
+      [leader, id],
+    );
+    if (
+      !lottery ||
+      (req.user.role !== "Admin" &&
+        (!lottery.enabled || lottery.config?.selling === false))
+    )
+      return res.status(404).json({ error: "ไม่พบประเภทหวยที่เปิดขาย" });
+    const before = req.query.before || bangkokToday();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(before)) throw Error("วันที่ไม่ถูกต้อง");
+    const exclude = Number(req.query.exclude || 0);
+    if (!Number.isSafeInteger(exclude) || exclude < 0)
+      throw Error("งวดไม่ถูกต้อง");
+    const dates = [req.query.from, req.query.to];
+    if (dates.some((v) => v && !/^\d{4}-\d{2}-\d{2}$/.test(v)))
+      throw Error("วันที่ไม่ถูกต้อง");
+    const rows = await query(
+      "SELECT d.*,l.name,l.kind,l.flag,l.enabled FROM draws d JOIN lotteries l ON l.id=d.lottery_id WHERE d.lottery_id=? AND d.draw_date<? AND d.draw_date<? AND d.id<>?" +
+        (dates[0] ? " AND d.draw_date>=?" : "") +
+        (dates[1] ? " AND d.draw_date<=?" : "") +
+        " ORDER BY d.draw_date DESC,d.id DESC LIMIT 11",
+      [id, before, bangkokToday(), exclude, ...dates.filter(Boolean)],
+    );
+    const page = rows.slice(0, 10);
+    res.json({
+      draws: hideUnpublished(page, req.user.role),
+      nextBefore:
+        rows.length > 10 ? String(page.at(-1).draw_date).slice(0, 10) : null,
+    });
+  }),
+);
+app.patch(
+  "/api/lotteries/:id/sales",
+  role(["Leader"]),
+  route(async (req, res) => {
+    if (typeof req.body.selling !== "boolean") throw Error("สถานะไม่ถูกต้อง");
+    const c = await db.getConnection();
+    try {
+      await c.beginTransaction();
+      await query(
+        "SELECT id FROM users WHERE id=? FOR UPDATE",
+        [req.user.id],
+        c,
+      );
+      const [lottery] = await query(
+        "SELECT id FROM lotteries WHERE id=? AND deleted_at IS NULL",
+        [req.params.id],
+        c,
+      );
+      if (!lottery) throw Error("ไม่พบประเภทหวย");
+      await query(
+        "INSERT INTO settings(leader_id,lottery_id,config) VALUES (?,?,?) ON DUPLICATE KEY UPDATE config=JSON_SET(config,'$.selling',CAST(? AS JSON))",
+        [
+          req.user.id,
+          lottery.id,
+          JSON.stringify({ selling: req.body.selling }),
+          JSON.stringify(req.body.selling),
+        ],
+        c,
+      );
+      await c.commit();
+      changed(req.user.id);
+      res.json({ ok: true });
+    } catch (e) {
+      await c.rollback();
+      throw e;
+    } finally {
+      c.release();
+    }
+  }),
+);
+app.get(
   "/api/state",
   route(async (req, res) => {
     const u = req.user,
       leader = u.leader_id || u.id;
     const lotteries = await query("SELECT * FROM lotteries");
+    if (req.query.view === "results") {
+      const today = bangkokToday();
+      const settings = await query(
+        "SELECT lottery_id,config FROM settings WHERE leader_id=?",
+        [leader],
+      );
+      const visibleLotteries = lotteries.filter(
+        (l) =>
+          !l.deleted_at &&
+          (u.role === "Admin" ||
+            (l.enabled &&
+              settings.find((s) => s.lottery_id === l.id)?.config?.selling !==
+                false)),
+      );
+      const draws = hideUnpublished(
+        await query(
+          currentResultsSql + (u.role === "Admin" ? "" : teamSalesSql),
+          [today, today, leader],
+        ),
+        u.role,
+      );
+      const [owner] =
+        u.role === "Member"
+          ? await query("SELECT expires_at FROM users WHERE id=?", [leader])
+          : [u];
+      const notifications = await query(
+        "SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 30",
+        [u.id],
+      );
+      return res.json({
+        view: "results",
+        user: clean(u),
+        accessExpiresAt: owner?.expires_at || null,
+        lotteries: visibleLotteries,
+        draws,
+        notifications,
+        users: [],
+        bills: [],
+        settings: [],
+        drawSettings: [],
+        usage: [],
+        memberDiscounts: [],
+        exchangeRates: [],
+        defaults,
+      });
+    }
     const draws = await query(
       "SELECT d.*,l.name,l.kind,l.flag,l.enabled FROM draws d JOIN lotteries l ON l.id=d.lottery_id ORDER BY draw_date DESC",
     );
@@ -273,6 +405,7 @@ app.get(
               ])
             )[0];
     res.json({
+      view: "full",
       user: clean(u),
       accessExpiresAt: accessOwner?.expires_at || null,
       lotteries,
@@ -519,10 +652,10 @@ app.patch(
   "/api/lotteries/:id",
   role(["Admin"]),
   route(async (req, res) => {
-    await query("UPDATE lotteries SET enabled=? WHERE id=?", [
-      req.body.enabled ? 1 : 0,
-      req.params.id,
-    ]);
+    await query(
+      "UPDATE lotteries SET enabled=? WHERE id=? AND deleted_at IS NULL",
+      [req.body.enabled ? 1 : 0, req.params.id],
+    );
     io.emit("refresh");
     res.json({ ok: true });
   }),
@@ -532,6 +665,11 @@ app.post(
   role(["Admin"]),
   route(async (req, res) => {
     const b = req.body;
+    const [lottery] = await query(
+      "SELECT id FROM lotteries WHERE id=? AND deleted_at IS NULL",
+      [b.lottery_id],
+    );
+    if (!lottery) throw Error("ไม่พบประเภทหวย");
     if (
       !/^\d{4}-\d{2}-\d{2}$/.test(b.draw_date) ||
       !Number.isFinite(Date.parse(b.result_at))
@@ -587,7 +725,20 @@ app.post(
   route(async (req, res) => {
     if (Number(req.params.lottery) <= 0) throw Error("ประเภทหวยไม่ถูกต้อง");
     const { discount, discounts, ...settings } = req.body;
-    const c = { ...defaults, ...settings };
+    const [lottery] = await query(
+      "SELECT id FROM lotteries WHERE id=? AND deleted_at IS NULL",
+      [req.params.lottery],
+    );
+    if (!lottery) throw Error("ไม่พบประเภทหวย");
+    const [previous] = await query(
+      "SELECT config FROM settings WHERE leader_id=? AND lottery_id=?",
+      [req.user.id, req.params.lottery],
+    );
+    const c = {
+      ...defaults,
+      ...settings,
+      selling: previous?.config?.selling !== false,
+    };
     if (
       (c.closeTime
         ? !/^([01]\d|2[0-3]):[0-5]\d$/.test(c.closeTime)
@@ -613,7 +764,7 @@ app.post(
     )
       throw Error("การตั้งค่าไม่ถูกต้อง");
     await query(
-      "INSERT INTO settings VALUES (?,?,?) ON DUPLICATE KEY UPDATE config=VALUES(config)",
+      "INSERT INTO settings VALUES (?,?,?) ON DUPLICATE KEY UPDATE config=JSON_SET(VALUES(config),'$.selling',COALESCE(JSON_EXTRACT(config,'$.selling'),CAST('true' AS JSON)))",
       [req.user.id, req.params.lottery, JSON.stringify(c)],
     );
     changed(req.user.id);
@@ -627,12 +778,10 @@ app.put(
     const b = req.body;
     if (!b.name?.trim() || !["หวยไทย", "หวยนอก"].includes(b.kind))
       throw Error("ข้อมูลหวยไม่ถูกต้อง");
-    await query("UPDATE lotteries SET name=?,kind=?,flag=? WHERE id=?", [
-      b.name,
-      b.kind,
-      b.flag || "🎟️",
-      req.params.id,
-    ]);
+    await query(
+      "UPDATE lotteries SET name=?,kind=?,flag=? WHERE id=? AND deleted_at IS NULL",
+      [b.name, b.kind, b.flag || "🎟️", req.params.id],
+    );
     io.emit("refresh");
     res.json({ ok: true });
   }),
@@ -641,13 +790,12 @@ app.delete(
   "/api/lotteries/:id",
   role(["Admin"]),
   route(async (req, res) => {
-    const [d] = await query(
-      "SELECT COUNT(*) AS n FROM draws WHERE lottery_id=?",
+    if (req.body?.confirm !== true) throw Error("กรุณายืนยันการลบประเภทหวย");
+    const [result] = await db.query(
+      "UPDATE lotteries SET deleted_at=NOW(),enabled=0 WHERE id=? AND deleted_at IS NULL",
       [req.params.id],
     );
-    if (d.n) throw Error("หวยนี้มีงวดแล้ว ใช้ปิดใช้งานเพื่อรักษาประวัติ");
-    await query("DELETE FROM settings WHERE lottery_id=?", [req.params.id]);
-    await query("DELETE FROM lotteries WHERE id=?", [req.params.id]);
+    if (!result.affectedRows) throw Error("ไม่พบประเภทหวย");
     io.emit("refresh");
     res.json({ ok: true });
   }),
@@ -827,11 +975,11 @@ app.post(
           throw Error("ไม่พบโพยที่แก้ไขได้");
       }
       const [draw] = await query(
-        "SELECT d.*,l.enabled FROM draws d JOIN lotteries l ON l.id=d.lottery_id WHERE d.id=?",
+        "SELECT d.*,l.enabled,l.deleted_at FROM draws d JOIN lotteries l ON l.id=d.lottery_id WHERE d.id=?",
         [req.body.draw_id],
         c,
       );
-      if (!draw?.enabled) throw Error("หวยไม่เปิดรับ");
+      if (!draw?.enabled || draw.deleted_at) throw Error("หวยไม่เปิดรับ");
       const [setting] = await query(
         "SELECT config FROM settings WHERE leader_id=? AND lottery_id=?",
         [leader.id, draw.lottery_id],
@@ -842,7 +990,10 @@ app.post(
         [leader.id, draw.id],
         c,
       );
-      if (!setting) throw Error("หัวหน้ายังไม่ได้กำหนดอัตราจ่าย");
+      if (setting?.config?.selling === false)
+        throw Error("หัวหน้าปิดขายหวยประเภทนี้");
+      if (!setting?.config?.rates)
+        throw Error("หัวหน้ายังไม่ได้กำหนดอัตราจ่าย");
       const currency = req.body.currency || "THB";
       if (previous && billCurrency(previous) !== currency)
         throw Error("ไม่สามารถเปลี่ยนสกุลเงินของบิลเดิม");

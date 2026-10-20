@@ -20,3 +20,21 @@ export function calculateDiscount(items = [], rates = {}) {
   const discount = round(rows.reduce((s, i) => s + i.discountAmount, 0));
   return { rows, gross, discount, payable: round(gross - discount) };
 }
+
+// Sum rounded item discounts, so compact mode totals match recorded bill previews.
+export function discountGroups(result) {
+  const groups = new Map();
+  for (const row of result.rows) {
+    if (!groups.has(row.type))
+      groups.set(row.type, {
+        type: row.type,
+        percent: row.percent,
+        discountAmount: 0,
+      });
+    const group = groups.get(row.type);
+    group.discountAmount = round(group.discountAmount + row.discountAmount);
+  }
+  return discountTypes
+    .filter((type) => groups.has(type))
+    .map((type) => groups.get(type));
+}

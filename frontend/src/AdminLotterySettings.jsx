@@ -269,7 +269,7 @@ export default function AdminLotterySettings({
       title: draw ? `แก้ไขงวด ${draw.name}` : "เพิ่มงวดหวย",
       content: (
         <DrawEditor
-          lotteries={state.lotteries}
+          lotteries={state.lotteries.filter((l) => !l.deleted_at)}
           lotteryId={lotteryId}
           draw={draw}
           onSave={(v) =>
@@ -282,8 +282,10 @@ export default function AdminLotterySettings({
         />
       ),
     });
-  const lotteries = state.lotteries.filter(matches);
+  const catalog = state.lotteries.filter((l) => !l.deleted_at);
+  const lotteries = catalog.filter(matches);
   const draws = state.draws
+    .filter((d) => catalog.some((l) => l.id === d.lottery_id))
     .filter(matches)
     .filter(
       (d) =>
@@ -326,7 +328,7 @@ export default function AdminLotterySettings({
               onChange={(e) => setLotteryFilter(e.target.value)}
             >
               <option value="">ทุกประเภทหวย</option>
-              {state.lotteries.map((l) => (
+              {catalog.map((l) => (
                 <option key={l.id} value={l.id}>
                   {l.name}
                 </option>
@@ -414,17 +416,23 @@ export default function AdminLotterySettings({
                           </button>
                           <button
                             className="admin-delete"
-                            disabled={drawCount > 0}
-                            title={
-                              drawCount
-                                ? "มีงวดอยู่แล้ว จึงลบไม่ได้"
-                                : "ลบประเภทหวย"
-                            }
+                            title="ลบประเภทหวย"
                             onClick={() =>
                               modal({
-                                title: `ลบ ${l.name}`,
+                                title: `ยืนยันลบ ${l.name}?`,
+                                content: (
+                                  <p>
+                                    ลบหวยนี้ออกจากหน้าผลและการขายของทุกเครือข่าย
+                                    บิลและผลเดิมจะยังเก็บไว้ในรายงานย้อนหลัง
+                                  </p>
+                                ),
                                 confirm: () =>
-                                  save(`/lotteries/${l.id}`, "delete"),
+                                  act(async () => {
+                                    await api.delete(`/lotteries/${l.id}`, {
+                                      data: { confirm: true },
+                                    });
+                                    modal(null);
+                                  }),
                               })
                             }
                           >
@@ -537,7 +545,7 @@ export default function AdminLotterySettings({
       </div>
       <p className="admin-catalog-footnote">
         {mode === "lotteries"
-          ? `${lotteries.length} ประเภท · กดสถานะเพื่อเปิด/ปิดรับ · ลบได้เมื่อไม่มีงวด`
+          ? `${lotteries.length} ประเภท · ลบได้ทุกประเภท โดยเก็บประวัติบิลเดิม`
           : `${draws.length} งวด · ลบได้เฉพาะงวดที่ไม่มีโพย`}
       </p>
     </section>
