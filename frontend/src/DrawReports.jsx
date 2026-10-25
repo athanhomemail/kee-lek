@@ -1,3 +1,4 @@
+import MemberCollectionReport from "./MemberCollectionReport.jsx";
 import { sortLotteries } from "./lotteryOrder.js";
 import LotteryOptions from "./LotteryOptions.jsx";
 import BillCard from "./BillCard.jsx";
@@ -254,6 +255,13 @@ export default function DrawReports({ state, bills }) {
           <DailyPerformance state={state} />
         ) : !draw ? (
           <p>ยังไม่มีงวดหวย</p>
+        ) : tab === "bills" && state.user.role === "Leader" ? (
+          <MemberCollectionReport
+            key={draw.id}
+            state={state}
+            bills={bills}
+            draw={draw}
+          />
         ) : tab === "bills" ? (
           <>
             <h3>ยอดเรียกเก็บและส่วนลดรายบิล</h3>

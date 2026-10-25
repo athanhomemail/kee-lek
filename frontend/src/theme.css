@@ -3452,3 +3452,45 @@ footer {
 .member-discounts-fields { min-width:0; border:0; padding:0; margin:12px 0 0; }
 @media(max-width:760px) { .result-history-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:520px) { .result-history-grid { grid-template-columns:1fr; } }
+
+.member-bills-modal { width:min(1100px,calc(100vw - 32px)); }
+.collection-table { min-width:760px; }
+.collection-table caption { text-align:left; padding:0 0 12px; font-size:12px; opacity:.7; }
+/* Use cell roles rather than :first-child: a rowspan changes cell positions on the kip row. */
+.member-collection-report .collection-table { border-collapse:collapse; border-spacing:0; font-variant-numeric:tabular-nums; }
+.member-collection-report .collection-table th,
+.member-collection-report .collection-table td { border:1px solid var(--palette-border-eee8f0,#eee8f0); padding:5px 12px; line-height:1.4; text-align:right; vertical-align:middle; }
+.member-collection-report .collection-table tbody tr:last-child td { border-bottom:1px solid var(--palette-border-eee8f0,#eee8f0); }
+.member-collection-report .collection-table thead th { background:var(--palette-surface-f8f7fb,#f8f7fb); }
+.member-collection-report .collection-table .collection-member-cell,
+.member-collection-report .collection-table th:first-child { text-align:left; }
+.member-collection-report .collection-table th.collection-currency-cell,
+.member-collection-report .collection-table td.collection-currency-cell { text-align:center; min-width:90px; }
+.member-collection-report .collection-table tfoot th,
+.member-collection-report .collection-table tfoot td { background:var(--palette-surface-fff0db,#fff0db); font-weight:600; }
+.member-collection-report .collection-table .collection-member-start > td { border-top-width:2px; }
+.member-collection-report .collection-table td strong { font-size:inherit; }
+.member-collection-report .collection-table td:last-child button { min-width:76px; min-height:0; padding:4px 9px; line-height:1.4; font-size:11px; border-radius:7px; }
+
+.collection-table td > small { display:block; font-size:10px; opacity:.65; margin-top:2px; }
+.collection-member-name { padding:0; background:none; border:0; text-align:left; color:inherit; text-decoration:underline; text-underline-offset:3px; }
+.collection-member-name:disabled { text-decoration:none; opacity:1; }
+.collection-table tfoot { background:var(--palette-surface-fff0db,#fff0db); }
+.collection-dialog-totals { display:flex; flex-wrap:wrap; gap:10px; margin-bottom:16px; }
+.collection-dialog-totals > div { flex:1; min-width:220px; padding:12px; border:1px solid var(--palette-border-eee8f0,#eee8f0); border-radius:10px; }
+.collection-dialog-totals strong, .collection-dialog-totals span { display:block; }
+.collection-dialog-totals span { font-size:12px; margin-top:6px; }
+
+/* Historical reports show one bounded section at a time. */
+.history-tabs { display:flex; gap:8px; flex-wrap:wrap; padding:10px 0; margin:8px 0; }
+.history-tabs button { padding:10px 16px; border-radius:10px; font-size:13px; }
+.history-tabs button[aria-selected="true"] { background:var(--palette-surface-fff0db,#fff0db); border-color:var(--palette-border-eed7b7,#eed7b7); color:var(--ink); font-weight:600; }
+.history-report-panel { margin:0; min-width:0; }
+.history-report-panel > h2 { font-size:19px; margin:0 0 12px; }
+.history-report-panel .history-table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+.history-report-panel .history-table th, .history-report-panel .history-table td { border:1px solid var(--palette-border-eee8f0,#eee8f0); padding:9px 12px; text-align:right; white-space:nowrap; }
+.history-report-panel .history-table th:first-child, .history-report-panel .history-table td:first-child { text-align:left; }
+.history-report-panel .history-table thead th { background:var(--palette-surface-f8f7fb,#f8f7fb); }
+.history-report-panel .history-table tfoot th, .history-report-panel .history-table tfoot td { background:var(--palette-surface-fff0db,#fff0db); font-weight:600; }
+.history-help { font-size:12px; line-height:1.7; }
+.history-pagination { margin:12px 0; }

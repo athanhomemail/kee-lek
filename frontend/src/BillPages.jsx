@@ -1,9 +1,15 @@
 import React, { useState } from "react";
 import { paginateBills } from "./billResults.js";
 
-export default function BillPages({ bills, renderBill, empty }) {
+export default function BillPages({
+  bills,
+  renderBill,
+  empty,
+  initialPageSize = 25,
+  pageSizes = [25, 50, 100],
+}) {
   const [requestedPage, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const [pageSize, setPageSize] = useState(initialPageSize);
   const { page, totalPages, start, end, rows } = paginateBills(
     bills,
     requestedPage,
@@ -25,7 +31,7 @@ export default function BillPages({ bills, renderBill, empty }) {
               setPage(1);
             }}
           >
-            {[25, 50, 100].map((size) => (
+            {pageSizes.map((size) => (
               <option key={size} value={size}>
                 {size}
               </option>

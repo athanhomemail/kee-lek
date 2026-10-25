@@ -386,3 +386,43 @@ test("winning bills wait for publication, exclude cancellations, and preserve me
     [],
   );
 });
+
+test("ranking payout uses each saved rate, separates currencies and includes matching tod permutations", () => {
+  const rows = rankedNumbers(
+    [
+      {
+        draw_id: 10,
+        status: "active",
+        items: [
+          { type: "2top", number: "12", amount: 100, rate: 95 },
+          { type: "2top", number: "12", amount: 50, rate: 47.5 },
+          { type: "3tod", number: "123", amount: 10, rate: 150 },
+          { type: "3tod", number: "321", amount: 20, rate: 75 },
+        ],
+      },
+      {
+        draw_id: 10,
+        status: "active",
+        currency: "LAK",
+        items: [{ type: "2top", number: "12", amount: 2, rate: 90 }],
+      },
+      {
+        draw_id: 10,
+        status: "cancelled",
+        items: [{ type: "2top", number: "12", amount: 1000, rate: 100 }],
+      },
+      {
+        draw_id: 11,
+        status: "active",
+        items: [{ type: "2top", number: "12", amount: 1000, rate: 100 }],
+      },
+    ],
+    10,
+  );
+  assert.deepEqual(rows.find((r) => r.key === "2top:12").payout, {
+    THB: 11875,
+    LAK: 180,
+  });
+  assert.equal(rows.find((r) => r.key === "3tod:123").payout.THB, 3000);
+  assert.equal(rows.find((r) => r.key === "3tod:321").payout.THB, 3000);
+});

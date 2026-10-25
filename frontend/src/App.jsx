@@ -149,6 +149,7 @@ export default function App() {
     [modal, setModal] = useState(null),
     [billResultFilter, setBillStatusFilter] = useState(""),
     [billLotteryId, setBillLotteryId] = useState(""),
+    [historyLotteryId, setHistoryLotteryId] = useState(""),
     [prizeCurrency, setPrizeCurrency] = useState(""),
     [prizeSort, setPrizeSort] = useState("latest"),
     [busy, setBusy] = useState(false),
@@ -301,6 +302,7 @@ export default function App() {
     setPage("ผล");
     setFilter("");
     setMemberFilter("");
+    setHistoryLotteryId("");
     setItems([]);
     setDrawId("");
     setCurrency("THB");
@@ -347,6 +349,9 @@ export default function App() {
   const matches = (d) =>
     d &&
     (!kindFilter || d.kind === kindFilter) &&
+    (page !== "สถิติ" ||
+      !historyLotteryId ||
+      String(d.lottery_id) === historyLotteryId) &&
     (!from || String(d.draw_date).slice(0, 10) >= from) &&
     (!to || String(d.draw_date).slice(0, 10) <= to);
   const scopedBills = (state?.bills || []).filter(
@@ -359,12 +364,32 @@ export default function App() {
       <select
         aria-label="ชนิดหวย"
         value={kindFilter}
-        onChange={(e) => setKindFilter(e.target.value)}
+        onChange={(e) => {
+          setKindFilter(e.target.value);
+          setHistoryLotteryId("");
+        }}
       >
         <option value="">ทุกชนิดหวย</option>
         <option>หวยไทย</option>
         <option>หวยนอก</option>
       </select>
+      {page === "สถิติ" && (
+        <label>
+          ประเภทหวย
+          <select
+            aria-label="ประเภทหวยรายงานย้อนหลัง"
+            value={historyLotteryId}
+            onChange={(e) => setHistoryLotteryId(e.target.value)}
+          >
+            <option value="">ทุกประเภทหวย</option>
+            <LotteryOptions
+              items={(state?.lotteries || []).filter(
+                (l) => !kindFilter || l.kind === kindFilter,
+              )}
+            />
+          </select>
+        </label>
+      )}
       {page === "ผล" && (
         <>
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
@@ -1863,6 +1888,12 @@ export default function App() {
                   <Statistics
                     state={state}
                     bills={scopedBills}
+                    historyLotteries={state.lotteries.filter(
+                      (l) =>
+                        (!kindFilter || l.kind === kindFilter) &&
+                        (!historyLotteryId ||
+                          String(l.id) === historyLotteryId),
+                    )}
                     filters={filters}
                   />
                 </>

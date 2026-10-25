@@ -42,6 +42,24 @@ export function rankedNumbers(
       row.count++;
     }
   }
+  const payouts = Object.fromEntries(
+    ["THB", "LAK"].map((currency) => [
+      currency,
+      new Map(
+        numberExposure(bills, drawId, currency).map((row) => [
+          row.key,
+          row.payout,
+        ]),
+      ),
+    ]),
+  );
+  for (const row of rows.values()) {
+    const key = `${row.type}:${row.type === "3tod" ? [...row.number].sort().join("") : row.number}`;
+    row.payout = {
+      THB: payouts.THB.get(key) || 0,
+      LAK: payouts.LAK.get(key) || 0,
+    };
+  }
   return [...rows.values()].sort(
     (a, b) =>
       (direction === "asc" ? 1 : -1) * (a[sortCurrency] - b[sortCurrency]) ||
