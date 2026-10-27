@@ -319,7 +319,9 @@ export default function Statistics({
                   <p className="muted history-help">
                     ยอดจ่ายใช้ยอดซื้อ × อัตราจ่ายที่บันทึกในบิล รวมจ่ายครึ่งแล้ว
                     · โต๊ดรวมเลขสลับหลักที่ถูกร่วมกัน · เป็นยอดเฉพาะเลข/โหมดนี้
-                    ไม่รวมโหมดอื่นที่อาจถูกพร้อมกัน
+                    ไม่รวมโหมดอื่นที่อาจถูกพร้อมกัน · จ่ายเกินยอดซื้อทั้งงวด =
+                    ยอดจ่ายลบยอดซื้อทุกโหมดในงวดและสกุลเงินเดียวกัน (ไม่เกินแสดง
+                    0)
                   </p>
                   <ReportPages
                     key={`${selectedDraw?.id}-${currency}-${sortCurrency}-${direction}-${type}`}
@@ -338,6 +340,7 @@ export default function Statistics({
                                 <th key={c}>ยอดซื้อ ({unit(c)})</th>
                               ))}
                               <th>ต้องจ่ายหากเลขถูก</th>
+                              <th>จ่ายเกินยอดซื้อทั้งงวด</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -356,6 +359,15 @@ export default function Statistics({
                                     {currencies.map((c) => (
                                       <strong key={c}>
                                         {amount(row.payout[c], c)}
+                                      </strong>
+                                    ))}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className="report-amounts">
+                                    {currencies.map((c) => (
+                                      <strong key={c}>
+                                        {amount(row.excess[c], c)}
                                       </strong>
                                     ))}
                                   </span>

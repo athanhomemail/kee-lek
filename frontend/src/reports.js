@@ -20,11 +20,13 @@ export function rankedNumbers(
   type = "",
 ) {
   const rows = new Map();
+  const purchased = { THB: 0, LAK: 0 };
   for (const bill of bills) {
     if (bill.status !== "active" || String(bill.draw_id) !== String(drawId))
       continue;
     const currency = reportCurrencyOf(bill);
     for (const item of bill.items) {
+      purchased[currency] += Math.round(Number(item.amount || 0) * 100);
       if (type && item.type !== type) continue;
       const key = `${item.type}:${item.number}`;
       if (!rows.has(key))
@@ -59,6 +61,15 @@ export function rankedNumbers(
       THB: payouts.THB.get(key) || 0,
       LAK: payouts.LAK.get(key) || 0,
     };
+    row.excess = Object.fromEntries(
+      ["THB", "LAK"].map((currency) => [
+        currency,
+        Math.max(
+          0,
+          Math.round(row.payout[currency] * 100) - purchased[currency],
+        ) / 100,
+      ]),
+    );
   }
   return [...rows.values()].sort(
     (a, b) =>

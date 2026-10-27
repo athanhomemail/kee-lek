@@ -426,3 +426,59 @@ test("ranking payout uses each saved rate, separates currencies and includes mat
   assert.equal(rows.find((r) => r.key === "3tod:123").payout.THB, 3000);
   assert.equal(rows.find((r) => r.key === "3tod:321").payout.THB, 3000);
 });
+
+test("ranking excess subtracts purchases across all modes in the same draw and currency, even with a type filter", () => {
+  const bills = [
+    {
+      draw_id: 1,
+      status: "active",
+      items: [
+        { type: "2top", number: "12", amount: 100, rate: 95 },
+        { type: "3top", number: "123", amount: 900, rate: 900 },
+      ],
+    },
+    {
+      draw_id: 1,
+      status: "active",
+      currency: "LAK",
+      items: [
+        { type: "2top", number: "12", amount: 2, rate: 90 },
+        { type: "runTop", number: "1", amount: 200, rate: 3 },
+      ],
+    },
+    {
+      draw_id: 1,
+      status: "cancelled",
+      items: [{ type: "3top", number: "999", amount: 99999, rate: 900 }],
+    },
+    {
+      draw_id: 2,
+      status: "active",
+      items: [{ type: "3top", number: "999", amount: 99999, rate: 900 }],
+    },
+  ];
+  const row = rankedNumbers(bills, 1, "THB", "desc", "2top")[0];
+  assert.deepEqual(row.payout, { THB: 9500, LAK: 180 });
+  assert.deepEqual(row.excess, { THB: 8500, LAK: 0 });
+  assert.deepEqual(
+    rankedNumbers(bills, 1).find((r) => r.key === row.key).excess,
+    row.excess,
+  );
+});
+
+test("ranking excess retains two decimal places without floating-point residue", () => {
+  const row = rankedNumbers(
+    [
+      {
+        draw_id: 1,
+        status: "active",
+        items: [
+          { type: "2top", number: "01", amount: 0.1, rate: 3 },
+          { type: "2bottom", number: "02", amount: 0.1, rate: 3 },
+        ],
+      },
+    ],
+    1,
+  )[0];
+  assert.equal(row.excess.THB, 0.1);
+});
