@@ -164,13 +164,15 @@ export function blockedNumbers(nums, blocked = []) {
   return [...new Set(nums)].filter((number) => blocked?.includes(number));
 }
 
-// Keep each original entry, including duplicates.
+// Keep original entries; two-digit doubles do not need a reversed copy.
 export function appendReversedNumbers(text, size) {
   const stripped = text.replace(
     /(?:=\s*\d+(?:\s*[*x×]\s*\d+)*|\d+\s*[*x×]\s*\d+(?:\s*[*x×]\s*\d+)*|\d+\s*(?:บน|ล่าง|โต๊ด|บาท)).*$/gm,
     "",
   );
-  const batch = (stripped.match(/\d+/g) || []).filter((n) => n.length === size);
+  const batch = (stripped.match(/\d+/g) || []).filter(
+    (n) => n.length === size && (size !== 2 || n[0] !== n[1]),
+  );
   if (size < 2 || !batch.length) return text;
   return text + (stripped !== text ? "\n" : /\s$/.test(text) ? "" : " ") + batch.map((n) => [...n].reverse().join("")).join(" ");
 }

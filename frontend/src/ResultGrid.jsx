@@ -251,12 +251,13 @@ export default function ResultGrid({
   to,
   revision,
 }) {
-  const columns = resultColumns(draws, lotteries, now);
-  if (!lotteries.length)
+  const visibleLotteries = lotteries.filter((l) => !l.deleted_at && l.enabled);
+  const columns = resultColumns(draws, visibleLotteries, now);
+  if (!visibleLotteries.length)
     return <p className="muted">ไม่มีประเภทหวยที่ตรงกับตัวกรอง</p>;
   return (
     <div className="lottery-result-rows">
-      {sortLotteries(lotteries).map((l) => (
+      {sortLotteries(visibleLotteries).map((l) => (
         <LotteryResults
           key={l.id}
           lottery={l}

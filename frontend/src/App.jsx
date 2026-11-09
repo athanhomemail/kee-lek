@@ -1,3 +1,4 @@
+import AutoDrawSettings from "./AutoDrawSettings.jsx";
 import { sortLotteries } from "./lotteryOrder.js";
 import LotteryOptions from "./LotteryOptions.jsx";
 import { offeredLotteries } from "./sales.js";
@@ -395,7 +396,9 @@ export default function App() {
           <select value={filter} onChange={(e) => setFilter(e.target.value)}>
             <option value="">หวยทุกประเภท</option>
             <LotteryOptions
-              items={(state?.lotteries || []).filter((l) => !l.deleted_at)}
+              items={(state?.lotteries || []).filter(
+                (l) => !l.deleted_at && l.enabled,
+              )}
             />
           </select>
           <span className="muted">ดูงวดเก่าจากปุ่มย้อนหลังของแต่ละหวย</span>
@@ -869,6 +872,7 @@ export default function App() {
                     lotteries={(state.lotteries || []).filter(
                       (l) =>
                         !l.deleted_at &&
+                        l.enabled &&
                         (!filter || String(l.id) === filter) &&
                         (!kindFilter || l.kind === kindFilter),
                     )}
@@ -2074,6 +2078,7 @@ function SettingsPage({ state, act, modal }) {
           ["leaders", "เครือข่าย"],
           ["lotteries", "ประเภทหวย"],
           ["draws", "งวดและผลรางวัล"],
+          ["auto-draws", "เปิดงวดอัตโนมัติ"],
           ["maintenance", "ล้างข้อมูล / เตรียม VPS"],
         ].map(([id, name]) => (
           <button
@@ -2241,6 +2246,14 @@ function SettingsPage({ state, act, modal }) {
           modal={modal}
           search={search}
           mode={adminTab}
+        />
+      )}
+      {adminTab === "auto-draws" && (
+        <AutoDrawSettings
+          state={state}
+          api={api}
+          search={search}
+          modal={modal}
         />
       )}
       {adminTab === "maintenance" && <MaintenancePanel act={act} api={api} />}

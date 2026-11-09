@@ -3494,3 +3494,21 @@ footer {
 .history-report-panel .history-table tfoot th, .history-report-panel .history-table tfoot td { background:var(--palette-surface-fff0db,#fff0db); font-weight:600; }
 .history-help { font-size:12px; line-height:1.7; }
 .history-pagination { margin:12px 0; }
+
+.auto-draw-fields { min-width:0; padding:0; margin:18px 0; border:0; display:grid; gap:14px; }
+.auto-draw-toggle { display:flex; gap:10px; align-items:center; font-weight:600; }
+.auto-draw-toggle input, .auto-draw-days input { width:17px; height:17px; flex-shrink:0; }
+.auto-draw-days { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
+.auto-draw-days label { display:flex; align-items:center; gap:8px; padding:9px; border:1px solid var(--palette-border-eee8f0,#eee8f0); border-radius:9px; }
+.auto-draw-days.month-days { grid-template-columns:repeat(auto-fit,minmax(70px,1fr)); }
+.auto-draw-day-actions { display:flex; gap:8px; }
+.auto-draw-day-actions button { padding:6px 10px; font-size:12px; }
+.auto-draw-status { padding:14px; border:1px solid var(--palette-border-eee8f0,#eee8f0); border-radius:12px; }
+.auto-draw-status p { margin:7px 0; }
+.auto-draw-settings > label { max-width:500px; }
+
+.auto-draw-exceptions { border-top:1px solid var(--palette-border-eee8f0,#eee8f0); padding-top:18px; margin:18px 0; }
+.auto-draw-exceptions h3 { margin:0 0 8px; }
+.auto-draw-exceptions .report-table { min-width:640px; }
+.auto-draw-exceptions .report-table th, .auto-draw-exceptions .report-table td { padding:8px 12px; border:1px solid var(--palette-border-eee8f0,#eee8f0); text-align:left; }
+.auto-draw-exceptions .report-table button { padding:5px 8px; font-size:12px; }

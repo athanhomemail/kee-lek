@@ -133,7 +133,7 @@ test("closed number detection handles generated, reversed and multiple batches",
 test("keyboard reversal appends every entry without losing original duplicates or zeroes", async () => {
   const { appendReversedNumbers } = await import("./keying.js");
   assert.equal(appendReversedNumbers("12 21 14", 2), "12 21 14 21 12 41");
-  assert.equal(appendReversedNumbers("01 01 11", 2), "01 01 11 10 10 11");
+  assert.equal(appendReversedNumbers("01 01 11", 2), "01 01 11 10 10");
   assert.equal(appendReversedNumbers("123 012", 3), "123 012 321 210");
   assert.equal(appendReversedNumbers("12 3", 2), "12 3 21");
   assert.equal(appendReversedNumbers("", 2), "");
@@ -200,4 +200,15 @@ test("inline typing, reversal and deletion preserve duplicate badge entries", as
   assert.deepEqual(splitNumberInput(text, 2), { completed: ["12", "12", "21", "21"], pending: "" });
   text = removeNumberInputEntry(text, 2, 1);
   assert.deepEqual(splitNumberInput(text, 2), { completed: ["12", "21", "21"], pending: "" });
+});
+
+
+test("spacebar skips all two-digit doubles while preserving mixed entries and three-digit behavior", async () => {
+  const { appendReversedNumbers } = await import("./keying.js");
+  const doubles = Array.from({ length: 10 }, (_, digit) => String(digit).repeat(2));
+  for (const number of doubles) assert.equal(appendReversedNumbers(number, 2), number);
+  assert.equal(appendReversedNumbers(doubles.join(" "), 2), doubles.join(" "));
+  assert.equal(appendReversedNumbers("22 12 00 01 22", 2), "22 12 00 01 22 21 10");
+  assert.equal(appendReversedNumbers("22 22 =50", 2), "22 22 =50");
+  assert.equal(appendReversedNumbers("121 111", 3), "121 111 121 111");
 });

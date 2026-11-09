@@ -1,4 +1,17 @@
 import {
+  validDrawDate,
+  saveDrawException,
+  manualMoveException,
+  manualSkipException,
+  moveExistingDraw,
+} from "./draw-exceptions.js";
+import {
+  defaultDrawSchedule,
+  validateDrawSchedule,
+  nextScheduledDraw,
+  runAutoDraws,
+} from "./auto-draws.js";
+import {
   bangkokToday,
   hideUnpublished,
   currentResultsSql,
@@ -86,6 +99,25 @@ io.on("connection", (s) => {
     s.join("team:" + (s.user.leader_id || s.user.id));
 });
 const changed = (leader) => io.to("team:" + leader).emit("refresh");
+let autoDrawRunning = false;
+async function checkAutoDraws(lotteryId) {
+  if (autoDrawRunning) return { busy: true, created: [], errors: [] };
+  autoDrawRunning = true;
+  try {
+    const result = await runAutoDraws(db, {
+      lotteryId,
+      onCreated: () => io.emit("refresh"),
+    });
+    for (const error of result.errors) console.error("Automatic draw:", error);
+    return result;
+  } finally {
+    autoDrawRunning = false;
+  }
+}
+const checkAutoDrawsSafely = () =>
+  checkAutoDraws().catch((error) =>
+    console.error("Automatic draw:", error.message),
+  );
 app.get(
   "/api/health",
   route(async (req, res) => {
@@ -288,10 +320,10 @@ app.get(
       const visibleLotteries = lotteries.filter(
         (l) =>
           !l.deleted_at &&
+          l.enabled &&
           (u.role === "Admin" ||
-            (l.enabled &&
-              settings.find((s) => s.lottery_id === l.id)?.config?.selling !==
-                false)),
+            settings.find((s) => s.lottery_id === l.id)?.config?.selling !==
+              false),
       );
       const draws = hideUnpublished(
         await query(
@@ -635,6 +667,79 @@ app.patch(
     }
   }),
 );
+app.get(
+  "/api/draw-schedules",
+  role(["Admin"]),
+  route(async (req, res) => {
+    const rows = await query(
+      "SELECT l.id AS lottery_id,s.config,s.last_checked_at,s.last_status,s.last_created_draw_id FROM lotteries l LEFT JOIN lottery_draw_schedules s ON s.lottery_id=l.id WHERE l.deleted_at IS NULL ORDER BY l.id",
+    );
+    res.set("Cache-Control", "no-store");
+    res.json(
+      rows.map((row) => ({
+        ...row,
+        config: row.config || defaultDrawSchedule,
+        next: nextScheduledDraw(row.config || defaultDrawSchedule),
+      })),
+    );
+  }),
+);
+app.put(
+  "/api/draw-schedules/:id",
+  role(["Admin"]),
+  route(async (req, res) => {
+    const config = validateDrawSchedule(req.body);
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [lottery] = await query(
+        "SELECT id FROM lotteries WHERE id=? AND deleted_at IS NULL FOR UPDATE",
+        [req.params.id],
+        connection,
+      );
+      if (!lottery) throw Error("ไม่พบประเภทหวย");
+      const [previous] = await query(
+        "SELECT config FROM lottery_draw_schedules WHERE lottery_id=? FOR UPDATE",
+        [lottery.id],
+        connection,
+      );
+      config.exceptions = previous?.config?.exceptions || [];
+      await query(
+        "INSERT INTO lottery_draw_schedules(lottery_id,config) VALUES (?,?) ON DUPLICATE KEY UPDATE config=VALUES(config)",
+        [lottery.id, JSON.stringify(config)],
+        connection,
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+    const checked = await checkAutoDraws(Number(req.params.id));
+    res.json({ ok: true, ...checked });
+  }),
+);
+app.post(
+  "/api/draw-schedules/:id/exceptions",
+  role(["Admin"]),
+  route(async (req, res) => {
+    const config = await saveDrawException(
+      db,
+      Number(req.params.id),
+      req.body,
+      { defaults: defaultDrawSchedule },
+    );
+    io.emit("refresh");
+    const checked = await checkAutoDraws(Number(req.params.id));
+    res.json({ ok: true, config, ...checked });
+  }),
+);
+app.post(
+  "/api/draw-schedules/check",
+  role(["Admin"]),
+  route(async (req, res) => res.json(await checkAutoDraws())),
+);
 app.post(
   "/api/lotteries",
   role(["Admin"]),
@@ -665,20 +770,41 @@ app.post(
   role(["Admin"]),
   route(async (req, res) => {
     const b = req.body;
-    const [lottery] = await query(
-      "SELECT id FROM lotteries WHERE id=? AND deleted_at IS NULL",
-      [b.lottery_id],
-    );
-    if (!lottery) throw Error("ไม่พบประเภทหวย");
     if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(b.draw_date) ||
+      !validDrawDate(b.draw_date) ||
       !Number.isFinite(Date.parse(b.result_at))
     )
       throw Error("วันเวลาไม่ถูกต้อง");
-    await query(
-      "INSERT INTO draws(lottery_id,draw_date,result_at) VALUES (?,?,?)",
-      [b.lottery_id, b.draw_date, bangkok(b.result_at)],
-    );
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [lottery] = await query(
+        "SELECT id FROM lotteries WHERE id=? AND deleted_at IS NULL FOR UPDATE",
+        [b.lottery_id],
+        connection,
+      );
+      if (!lottery) throw Error("ไม่พบประเภทหวย");
+      const [schedule] = await query(
+        "SELECT config FROM lottery_draw_schedules WHERE lottery_id=? FOR UPDATE",
+        [lottery.id],
+        connection,
+      );
+      if (schedule?.config?.exceptions?.some((row) => row.date === b.draw_date))
+        throw Error(
+          "วันงวดนี้มีข้อยกเว้น Auto กรุณาคืนวันเดิมหรือใช้วันปลายทางที่ตั้งไว้",
+        );
+      await query(
+        "INSERT INTO draws(lottery_id,draw_date,result_at) VALUES (?,?,?)",
+        [lottery.id, b.draw_date, bangkok(b.result_at)],
+        connection,
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
     io.emit("refresh");
     res.json({ ok: true });
   }),
@@ -701,6 +827,7 @@ app.patch(
       req.params.id,
     ]);
     io.emit("refresh");
+    void checkAutoDrawsSafely();
     res.json({ ok: true });
   }),
 );
@@ -806,20 +933,83 @@ app.put(
   route(async (req, res) => {
     const b = req.body;
     if (
-      !/^\d{4}-\d{2}-\d{2}$/.test(b.draw_date) ||
+      !validDrawDate(b.draw_date) ||
       !Number.isFinite(Date.parse(b.result_at))
     )
       throw Error("วันเวลาไม่ถูกต้อง");
-    const [bills] = await query(
-      "SELECT COUNT(*) AS n FROM bills WHERE draw_id=?",
-      [req.params.id],
-    );
-    if (bills.n) throw Error("งวดมีโพยแล้ว ไม่สามารถเลื่อนวันเวลาได้");
-    await query("UPDATE draws SET draw_date=?,result_at=? WHERE id=?", [
-      b.draw_date,
-      bangkok(b.result_at),
+    const [reference] = await query("SELECT lottery_id FROM draws WHERE id=?", [
       req.params.id,
     ]);
+    if (!reference) throw Error("ไม่พบงวดหวย");
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await query(
+        "SELECT id FROM lotteries WHERE id=? FOR UPDATE",
+        [reference.lottery_id],
+        connection,
+      );
+      const [draw] = await query(
+        "SELECT * FROM draws WHERE id=? FOR UPDATE",
+        [req.params.id],
+        connection,
+      );
+      if (!draw) throw Error("ไม่พบงวดหวย");
+      const [count] = await query(
+        "SELECT COUNT(*) n FROM bills WHERE draw_id=?",
+        [draw.id],
+        connection,
+      );
+      if (count.n)
+        throw Error(
+          "งวดมีโพยแล้ว ให้ใช้เมนูข้อยกเว้นงวดเพื่อเลื่อนโดยรักษาโพยเดิม",
+        );
+      const [stored] = await query(
+        "SELECT config FROM lottery_draw_schedules WHERE lottery_id=? FOR UPDATE",
+        [draw.lottery_id],
+        connection,
+      );
+      const config = { ...defaultDrawSchedule, ...stored?.config };
+      const fromDate = String(draw.draw_date).slice(0, 10);
+      if (
+        config.exceptions?.some(
+          (row) => row.date === b.draw_date && row.toDate !== fromDate,
+        )
+      )
+        throw Error(
+          "วันปลายทางถูกตั้งเป็นข้อยกเว้น กรุณาจัดการจากเมนูเปิดงวดอัตโนมัติ",
+        );
+      if (fromDate !== b.draw_date) {
+        const next = manualMoveException(
+          config,
+          fromDate,
+          b.draw_date,
+          bangkok(b.result_at),
+        );
+        await moveExistingDraw(
+          connection,
+          draw,
+          b.draw_date,
+          bangkok(b.result_at),
+        );
+        await query(
+          "INSERT INTO lottery_draw_schedules(lottery_id,config) VALUES (?,?) ON DUPLICATE KEY UPDATE config=VALUES(config)",
+          [draw.lottery_id, JSON.stringify(next)],
+          connection,
+        );
+      } else
+        await query(
+          "UPDATE draws SET result_at=? WHERE id=?",
+          [bangkok(b.result_at), draw.id],
+          connection,
+        );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
     io.emit("refresh");
     res.json({ ok: true });
   }),
@@ -828,25 +1018,56 @@ app.delete(
   "/api/draws/:id",
   role(["Admin"]),
   route(async (req, res) => {
-    const [b] = await query("SELECT COUNT(*) AS n FROM bills WHERE draw_id=?", [
+    const [reference] = await query("SELECT lottery_id FROM draws WHERE id=?", [
       req.params.id,
     ]);
-    if (b.n) throw Error("งวดนี้มีโพยแล้ว ไม่สามารถลบประวัติได้");
-    const c = await db.getConnection();
+    if (!reference) throw Error("ไม่พบงวดหวย");
+    const connection = await db.getConnection();
     try {
-      await c.beginTransaction();
+      await connection.beginTransaction();
+      await query(
+        "SELECT id FROM lotteries WHERE id=? FOR UPDATE",
+        [reference.lottery_id],
+        connection,
+      );
+      const [draw] = await query(
+        "SELECT * FROM draws WHERE id=? FOR UPDATE",
+        [req.params.id],
+        connection,
+      );
+      if (!draw) throw Error("ไม่พบงวดหวย");
+      const [count] = await query(
+        "SELECT COUNT(*) n FROM bills WHERE draw_id=?",
+        [draw.id],
+        connection,
+      );
+      if (count.n) throw Error("งวดนี้มีโพยแล้ว ไม่สามารถลบประวัติได้");
+      const [stored] = await query(
+        "SELECT config FROM lottery_draw_schedules WHERE lottery_id=? FOR UPDATE",
+        [draw.lottery_id],
+        connection,
+      );
+      const next = manualSkipException(
+        { ...defaultDrawSchedule, ...stored?.config },
+        String(draw.draw_date).slice(0, 10),
+      );
+      await query(
+        "INSERT INTO lottery_draw_schedules(lottery_id,config) VALUES (?,?) ON DUPLICATE KEY UPDATE config=VALUES(config)",
+        [draw.lottery_id, JSON.stringify(next)],
+        connection,
+      );
       await query(
         "DELETE FROM draw_settings WHERE draw_id=?",
-        [req.params.id],
-        c,
+        [draw.id],
+        connection,
       );
-      await query("DELETE FROM draws WHERE id=?", [req.params.id], c);
-      await c.commit();
-    } catch (e) {
-      await c.rollback();
-      throw e;
+      await query("DELETE FROM draws WHERE id=?", [draw.id], connection);
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
     } finally {
-      c.release();
+      connection.release();
     }
     io.emit("refresh");
     res.json({ ok: true });
@@ -1123,6 +1344,7 @@ app.delete(
 const maintenanceTables = [
   "users",
   "lotteries",
+  "lottery_draw_schedules",
   "draws",
   "settings",
   "draw_settings",
@@ -1217,3 +1439,7 @@ setInterval(async () => {
 http.listen(process.env.PORT || 4000, process.env.API_HOST || "127.0.0.1", () =>
   console.log("Kee-Lek API ready"),
 );
+
+// Run on restart and every minute, without a browser or external cron service.
+void checkAutoDrawsSafely();
+setInterval(checkAutoDrawsSafely, 60000).unref();

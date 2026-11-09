@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 const tables = {
   users: "บัญชี Leader / Member",
   lotteries: "ประเภทหวย",
+  lottery_draw_schedules: "ตารางเปิดงวดอัตโนมัติ",
   draws: "งวดและผลรางวัล",
   settings: "อัตราจ่าย / วงเงิน",
   draw_settings: "เวลาปิดรับ / เลขปิดรับ / จ่ายครึ่ง",

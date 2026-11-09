@@ -266,6 +266,27 @@ test(
         items: [{ number: "32", type: "2top", amount: 10 }],
       });
       assert.equal(submission.status, 200, JSON.stringify(submission.data));
+      await q("UPDATE lotteries SET enabled=0 WHERE id=?", [lottery]);
+      assert.ok(
+        !(await api("/state?view=results", admin.token)).data.lotteries.some(
+          (l) => l.id === lottery,
+        ),
+        "Admin result cards hide closed lotteries",
+      );
+      assert.ok(
+        !(await api("/state?view=results", admin.token)).data.draws.some(
+          (d) => d.lottery_id === lottery,
+        ),
+        "closed draw data stays out of current results",
+      );
+      assert.ok(
+        (await api("/state", admin.token)).data.lotteries.some(
+          (l) => l.id === lottery,
+        ),
+        "Admin settings retain closed lotteries",
+      );
+      await q("UPDATE lotteries SET enabled=1 WHERE id=?", [lottery]);
+
       assert.equal(
         (
           await api(
