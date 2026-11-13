@@ -1,3 +1,4 @@
+import { useBillData } from "./useBillData.js";
 import React, { useMemo, useState } from "react";
 import { CalendarDays, ChevronDown } from "lucide-react";
 import { dailyPerformance } from "./dailyPerformance.js";
@@ -18,7 +19,7 @@ const pair = (values) => (
 const resultClass = (value) =>
   value < 0 ? "daily-loss" : value > 0 ? "daily-profit" : "";
 
-export default function DailyPerformance({ state }) {
+export default function DailyPerformance({ state, api }) {
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
   const [now, setNow] = useState(Date.now());
@@ -26,16 +27,22 @@ export default function DailyPerformance({ state }) {
     const id = setInterval(() => setNow(Date.now()), 30000);
     return () => clearInterval(id);
   }, []);
+  const report = useBillData(
+    api,
+    state.user,
+    { from, to, summary: 1, status: "active" },
+    !(from && to && from > to),
+  );
   const days = useMemo(
     () =>
       dailyPerformance(
-        state.bills || [],
+        report.bills,
         state.draws,
         state.user.id,
         state.exchangeRates,
         now,
       ),
-    [state.bills, state.draws, state.user.id, state.exchangeRates, now],
+    [report.bills, state.draws, state.user.id, state.exchangeRates, now],
   );
   const visible = days.filter(
     (day) => (!from || day.date >= from) && (!to || day.date <= to),
@@ -47,6 +54,11 @@ export default function DailyPerformance({ state }) {
   const invalid = from && to && from > to;
   return (
     <section className="panel daily-performance">
+      {(report.loading || report.error) && (
+        <p role="status">
+          {report.error ? "โหลดรายงานไม่สำเร็จ" : "กำลังโหลดรายงาน…"}
+        </p>
+      )}
       <div className="daily-heading">
         <div>
           <span className="report-eyebrow">ผลประกอบการของเครือข่าย</span>

@@ -1,3 +1,4 @@
+import { refreshBillData, useBillData } from "./useBillData.js";
 import AutoDrawSettings from "./AutoDrawSettings.jsx";
 import { sortLotteries } from "./lotteryOrder.js";
 import LotteryOptions from "./LotteryOptions.jsx";
@@ -11,7 +12,7 @@ import PasswordInput from "./PasswordInput.jsx";
 import AdminLotterySettings, { ResultEditor } from "./AdminLotterySettings.jsx";
 import UserPasswordAccess from "./UserPasswordAccess.jsx";
 import { ExchangeSettings, RateTable } from "./LeaderRates.jsx";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import axios from "axios";
 import { io } from "socket.io-client";
 import html2canvas from "html2canvas";
@@ -228,10 +229,12 @@ export default function App() {
   const pageRef = useRef(page);
   pageRef.current = page;
   const loadVersion = useRef(0);
+  const userRef = useRef(state?.user);
+  userRef.current = state?.user;
   const load = async (targetPage = pageRef.current) => {
     const version = ++loadVersion.current;
     const { data } = await api.get("/state", {
-      params: targetPage === "ผล" ? { view: "results" } : {},
+      params: { view: targetPage === "ผล" ? "results" : "metadata" },
     });
     if (version === loadVersion.current)
       setState({ ...data, lotteries: sortLotteries(data.lotteries) });
@@ -248,6 +251,7 @@ export default function App() {
     try {
       const result = await fn();
       if (token && !state?.user?.must_change) await load();
+      refreshBillData();
       return result;
     } catch (e) {
       message(e.response?.data?.error || e.message);
@@ -274,10 +278,51 @@ export default function App() {
     const s = io({ auth: { token }, path: "/socket.io", autoConnect: false });
     s.io.uri = import.meta.env.VITE_SOCKET_URL || window.location.origin;
     s.connect();
-    s.on("refresh", () => load().catch(() => {}));
-    s.on("connect", () => load().catch(() => {}));
+    const refresh = () => {
+      load().catch(() => {});
+      refreshBillData();
+    };
+    let billTimer;
+    s.on("refresh", refresh);
+    s.on("connect", refresh);
+    s.on("bill-change", (change) => {
+      refreshBillData(change);
+      const user = userRef.current;
+      setState((previous) => {
+        const ownBill =
+          user?.role !== "Member" || String(user.id) === String(change.member);
+        if (
+          !ownBill ||
+          !previous?.draws?.some((d) => d.id === change.draw && !d.hasBills)
+        )
+          return previous;
+        return {
+          ...previous,
+          draws: previous.draws.map((d) =>
+            d.id === change.draw ? { ...d, hasBills: true } : d,
+          ),
+        };
+      });
+      if (user?.role === "Leader" && !billTimer)
+        billTimer = setTimeout(async () => {
+          billTimer = null;
+          try {
+            const { data } = await api.get("/notifications");
+            setState((previous) =>
+              previous?.user?.id === user.id
+                ? { ...previous, notifications: data }
+                : previous,
+            );
+          } catch {
+            // The next notification or state reload will retry.
+          }
+        }, 750);
+    });
     s.on("expired", logout);
-    return () => s.disconnect();
+    return () => {
+      clearTimeout(billTimer);
+      s.disconnect();
+    };
   }, [token]);
   useEffect(() => {
     const id = setInterval(() => setTick(Date.now()), 1000);
@@ -289,7 +334,10 @@ export default function App() {
       .filter((ms) => ms > 0);
     if (!upcoming?.length) return;
     const timer = setTimeout(
-      () => load().catch(() => {}),
+      () => {
+        load().catch(() => {});
+        refreshBillData();
+      },
       Math.min(2147483647, Math.min(...upcoming) + 1000),
     );
     return () => clearTimeout(timer);
@@ -355,10 +403,22 @@ export default function App() {
       String(d.lottery_id) === historyLotteryId) &&
     (!from || String(d.draw_date).slice(0, 10) >= from) &&
     (!to || String(d.draw_date).slice(0, 10) <= to);
-  const scopedBills = (state?.bills || []).filter(
-    (b) =>
-      matches(state?.draws?.find((d) => d.id === b.draw_id)) &&
-      (!memberFilter || String(b.member_id) === memberFilter),
+  const keyingData = useBillData(
+    api,
+    u,
+    { draw: drawId, keying: 1 },
+    Boolean(page === "คีย์" && drawId && !u?.must_change),
+  );
+  const receiptData = useBillData(
+    api,
+    u,
+    {
+      draw: filter.startsWith("d") ? filter.slice(1) : "",
+      lottery: billLotteryId,
+      member: memberFilter,
+      currency: prizeCurrency,
+    },
+    page === "โพย" && !u?.must_change,
   );
   const filters = (
     <div className="toolbar">
@@ -445,18 +505,22 @@ export default function App() {
     </div>
   );
   const total = items.reduce((s, i) => s + i.amount, 0);
+  const usageByNumber = useMemo(
+    () =>
+      new Map(
+        (
+          keyingData.usage.find((row) => row.currency === currency)?.items || []
+        ).map((item) => [item.type + ":" + item.number, item.amount]),
+      ),
+    [keyingData.usage, currency],
+  );
+  const editedBill = keyingData.bills.find((bill) => bill.id === editId);
   const available = (i) =>
     Number(config?.limits?.[i.type] ?? config?.limit ?? 0) -
-    (state.usage || [])
-      .filter((b) => b.draw_id === draw?.id && currencyOf(b) === currency)
-      .flatMap((b) => b.items)
-      .filter((x) => x.type === i.type && x.number === i.number)
-      .reduce((s, x) => s + x.amount, 0) +
-    (editId
-      ? (state.bills.find((b) => b.id === editId)?.items || [])
-          .filter((x) => x.number === i.number && x.type === i.type)
-          .reduce((s, x) => s + x.amount, 0)
-      : 0);
+    (usageByNumber.get(i.type + ":" + i.number) || 0) +
+    (editedBill?.items || [])
+      .filter((x) => x.number === i.number && x.type === i.type)
+      .reduce((s, x) => s + x.amount, 0);
   const inputMode = mode === "วิน" ? (digits === 3 ? "3 ตัว" : "2 ตัว") : mode;
   const inputSize =
     inputMode === "3 ตัว" || inputMode === "6 กลับ"
@@ -703,26 +767,12 @@ export default function App() {
   if (!u) return <div className="loading">กำลังโหลด คีย์เลข…</div>;
   const visibleBills =
     page === "โพย"
-      ? filterResultBills(
-          (state.bills || []).filter(
-            (b) =>
-              (!billLotteryId ||
-                String(
-                  state.draws.find((d) => d.id === b.draw_id)?.lottery_id,
-                ) === billLotteryId) &&
-              (!filter.startsWith("d") || "d" + b.draw_id === filter) &&
-              (u.role !== "Leader" ||
-                !memberFilter ||
-                String(b.member_id) === memberFilter),
-          ),
-          state.draws,
-          {
-            status: billResultFilter,
-            currency: prizeCurrency,
-            sort: prizeSort,
-            now: tick,
-          },
-        )
+      ? filterResultBills(receiptData.bills, state.draws, {
+          status: billResultFilter,
+          currency: prizeCurrency,
+          sort: prizeSort,
+          now: tick,
+        })
       : [];
 
   return (
@@ -1631,7 +1681,7 @@ export default function App() {
                           details
                           rates={
                             editId
-                              ? state.bills.find((b) => b.id === editId)
+                              ? keyingData.bills.find((b) => b.id === editId)
                                   ?.discountRates || {}
                               : state.memberDiscounts?.find(
                                   (r) =>
@@ -1663,7 +1713,13 @@ export default function App() {
                         </button>
                         <button
                           className="primary full"
-                          disabled={busy || !items.length || !config}
+                          disabled={
+                            busy ||
+                            !items.length ||
+                            !config ||
+                            keyingData.loading ||
+                            keyingData.error
+                          }
                           onClick={async () => {
                             if (submittingBill.current) return;
                             submittingBill.current = true;
@@ -1683,13 +1739,7 @@ export default function App() {
                               setBottom("");
                               setBillStatus("ส่งโพยแล้ว");
                               numberInput.current?.focus();
-                              try {
-                                await load();
-                              } catch {
-                                setBillStatus(
-                                  "ส่งโพยแล้ว แต่โหลดรายการล่าสุดไม่ได้ กรุณารีเฟรชหน้า",
-                                );
-                              }
+                              refreshBillData({ draw: draw.id, member: u.id });
                             } catch (e) {
                               setBillStatus(
                                 e.response?.data?.error ||
@@ -1716,7 +1766,16 @@ export default function App() {
                     </div>
                     <section className="panel recent">
                       <h2>5 โพยล่าสุดของคุณ</h2>
-                      {state.bills
+                      {keyingData.loading && <p>กำลังโหลดโพย…</p>}
+                      {keyingData.error && (
+                        <p>
+                          โหลดโพยไม่สำเร็จ{" "}
+                          <button onClick={() => refreshBillData()}>
+                            ลองใหม่
+                          </button>
+                        </p>
+                      )}
+                      {keyingData.bills
                         .filter((b) => b.draw_id === draw.id)
                         .slice(-5)
                         .reverse()
@@ -1861,7 +1920,15 @@ export default function App() {
                     ])}
                     bills={visibleBills}
                     empty={
-                      <Empty text="ไม่มีโพยตรงกับตัวกรอง ลองเปลี่ยนหวย งวด หรือสกุลเงิน" />
+                      <Empty
+                        text={
+                          receiptData.loading
+                            ? "กำลังโหลดโพย…"
+                            : receiptData.error
+                              ? "โหลดโพยไม่สำเร็จ"
+                              : "ไม่มีโพยตรงกับตัวกรอง ลองเปลี่ยนหวย งวด หรือสกุลเงิน"
+                        }
+                      />
                     }
                     renderBill={(b) => (
                       <Bill
@@ -1891,7 +1958,14 @@ export default function App() {
                 <>
                   <Statistics
                     state={state}
-                    bills={scopedBills}
+                    api={api}
+                    historyFilters={{
+                      kind: kindFilter,
+                      lottery: historyLotteryId,
+                      from,
+                      to,
+                      member: memberFilter,
+                    }}
                     historyLotteries={state.lotteries.filter(
                       (l) =>
                         (!kindFilter || l.kind === kindFilter) &&

@@ -1,3 +1,4 @@
+import { useBillData } from "./useBillData.js";
 import MemberCollectionReport from "./MemberCollectionReport.jsx";
 import { sortLotteries } from "./lotteryOrder.js";
 import LotteryOptions from "./LotteryOptions.jsx";
@@ -29,7 +30,7 @@ const pair = (v) => (
   </span>
 );
 
-export default function DrawReports({ state, bills }) {
+export default function DrawReports({ state, api }) {
   const lotteries = sortLotteries(state.lotteries);
   const [drawId, setDrawId] = useState("");
   const [lotteryId, setLotteryId] = useState("");
@@ -58,6 +59,13 @@ export default function DrawReports({ state, bills }) {
   const defaultDraw =
     candidates.find((d) => d.lottery_id === lottery?.id) || lotteryDraws[0];
   const draw = lotteryDraws.find((d) => String(d.id) === drawId) || defaultDraw;
+  const report = useBillData(
+    api,
+    state.user,
+    { draw: draw?.id },
+    Boolean(draw && tab !== "daily"),
+  );
+  const { bills } = report;
   const selected = drawBills(bills, draw?.id);
   const groups = reportGroups(
     bills,
@@ -252,7 +260,11 @@ export default function DrawReports({ state, bills }) {
       )}
       <div className="report-tab-content" role="tabpanel">
         {tab === "daily" ? (
-          <DailyPerformance state={state} />
+          <DailyPerformance state={state} api={api} />
+        ) : report.loading || report.error ? (
+          <p role="status">
+            {report.error ? "โหลดรายงานไม่สำเร็จ" : "กำลังโหลดรายงาน…"}
+          </p>
         ) : !draw ? (
           <p>ยังไม่มีงวดหวย</p>
         ) : tab === "bills" && state.user.role === "Leader" ? (

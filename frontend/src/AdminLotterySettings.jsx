@@ -438,9 +438,9 @@ export default function AdminLotterySettings({
                   );
                 })
               : draws.map((d) => {
-                  const hasBills = state.bills.some(
-                    (b) => String(b.draw_id) === String(d.id),
-                  );
+                  const hasBills =
+                    d.hasBills ??
+                    state.bills.some((b) => String(b.draw_id) === String(d.id));
                   const release = localDateTime(d.result_at);
                   return (
                     <tr key={d.id}>

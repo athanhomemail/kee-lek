@@ -95,10 +95,16 @@ io.use(async (s, next) => {
 });
 io.on("connection", (s) => {
   s.join("user:" + s.user.id);
+  if (s.user.role === "Admin") s.join("admins");
   if (s.user.role !== "Admin")
     s.join("team:" + (s.user.leader_id || s.user.id));
 });
 const changed = (leader) => io.to("team:" + leader).emit("refresh");
+const billChanged = (leader, member, draw) =>
+  io
+    .to("team:" + leader)
+    .to("admins")
+    .emit("bill-change", { leader, member, draw });
 let autoDrawRunning = false;
 async function checkAutoDraws(lotteryId) {
   if (autoDrawRunning) return { busy: true, created: [], errors: [] };
@@ -306,6 +312,152 @@ app.patch(
   }),
 );
 app.get(
+  "/api/notifications",
+  route(async (req, res) => {
+    res.json(
+      await query(
+        "SELECT * FROM notifications WHERE user_id=? ORDER BY id DESC LIMIT 30",
+        [req.user.id],
+      ),
+    );
+  }),
+);
+
+const billScope = (user) =>
+  user.role === "Admin"
+    ? ["1=1", []]
+    : [user.role === "Leader" ? "b.leader_id=?" : "b.member_id=?", [user.id]];
+
+function serializeBill(b, draw, rates) {
+  const { rates: snapshot, ...bill } = b;
+  return {
+    ...bill,
+    discountRates: rates || snapshot || {},
+    currency: billCurrency(b),
+    items: b.items.map(({ discount, ...item }) => item),
+    win: winnings(b, draw || {}),
+  };
+}
+
+app.get(
+  "/api/bill-data",
+  route(async (req, res) => {
+    const { user: u, query: filters } = req;
+    const [scope, values] = billScope(u);
+    const clauses = [scope];
+    for (const [key, column] of [
+      ["draw", "b.draw_id"],
+      ["lottery", "d.lottery_id"],
+      ["member", "b.member_id"],
+    ]) {
+      if (!filters[key]) continue;
+      if (typeof filters[key] !== "string" || !/^\d+$/.test(filters[key]))
+        throw Error("ตัวกรองไม่ถูกต้อง");
+      clauses.push(column + "=?");
+      values.push(filters[key]);
+    }
+    if (["หวยไทย", "หวยนอก"].includes(filters.kind)) {
+      clauses.push("l.kind=?");
+      values.push(filters.kind);
+    }
+    for (const [key, operator] of [
+      ["from", ">="],
+      ["to", "<="],
+    ]) {
+      if (!filters[key]) continue;
+      if (!validDrawDate(filters[key])) throw Error("วันที่ไม่ถูกต้อง");
+      clauses.push("d.draw_date" + operator + "?");
+      values.push(filters[key]);
+    }
+    if (["active", "cancelled"].includes(filters.status)) {
+      clauses.push("b.status=?");
+      values.push(filters.status);
+    }
+    if (["THB", "LAK"].includes(filters.currency)) {
+      clauses.push(
+        "COALESCE(NULLIF(JSON_UNQUOTE(JSON_EXTRACT(b.items,'$[0].currency')),''),'THB')=?",
+      );
+      values.push(filters.currency);
+    }
+    const from =
+      " FROM bills b JOIN draws d ON d.id=b.draw_id JOIN lotteries l ON l.id=d.lottery_id JOIN users m ON m.id=b.member_id WHERE " +
+      clauses.join(" AND ");
+    const size = Number(filters.size);
+    const paged = [10, 25, 50, 100].includes(size);
+    const summary = filters.summary === "1";
+    const keying = filters.keying === "1";
+    if (keying && (u.role !== "Member" || !filters.draw))
+      return res.status(403).json({ error: "ไม่มีสิทธิ์ใช้งาน" });
+    let total = 0;
+    let page = 1;
+    if (paged) {
+      const [count] = await query("SELECT COUNT(*) AS total" + from, values);
+      total = count.total;
+      page = Math.max(
+        1,
+        Math.min(
+          Math.ceil(total / size),
+          Math.floor(Number(filters.page)) || 1,
+        ),
+      );
+    }
+    const rows = await query(
+      "SELECT " +
+        (summary
+          ? "b.id,b.draw_id,b.member_id,b.leader_id,b.gross,b.status,b.items"
+          : "b.*,(SELECT rates FROM bill_discount_snapshots WHERE bill_id=b.id) AS rates") +
+        ",m.name AS member_name,d.result_at,d.top3,d.top2,d.bottom2" +
+        from +
+        (paged ? " ORDER BY b.id DESC LIMIT ? OFFSET ?" : " ORDER BY b.id"),
+      paged ? [...values, size, (page - 1) * size] : values,
+    );
+    const now = new Date();
+    const bills = rows.map(({ result_at, top3, top2, bottom2, ...bill }) => {
+      const draw =
+        u.role === "Admin" || new Date(result_at) <= now
+          ? { top3, top2, bottom2 }
+          : {};
+      if (!summary) return serializeBill(bill, draw);
+      const { items, ...fields } = bill;
+      return {
+        ...fields,
+        currency: billCurrency(bill),
+        win: winnings(bill, draw),
+      };
+    });
+    const usage = [];
+    if (keying) {
+      const team = await query(
+        "SELECT items FROM bills WHERE leader_id=? AND draw_id=? AND status='active'",
+        [u.leader_id, filters.draw],
+      );
+      const totals = new Map();
+      for (const bill of team) {
+        const currency = billCurrency(bill);
+        if (!totals.has(currency)) totals.set(currency, new Map());
+        const numbers = totals.get(currency);
+        for (const { type, number, amount } of bill.items) {
+          const key = type + ":" + number;
+          const previous = numbers.get(key);
+          numbers.set(key, {
+            type,
+            number,
+            amount: (previous?.amount || 0) + Number(amount),
+          });
+        }
+      }
+      for (const [currency, numbers] of totals)
+        usage.push({
+          draw_id: Number(filters.draw),
+          currency,
+          items: [...numbers.values()],
+        });
+    }
+    res.json({ bills, usage, total: paged ? total : bills.length, page });
+  }),
+);
+
+app.get(
   "/api/state",
   route(async (req, res) => {
     const u = req.user,
@@ -374,14 +526,17 @@ app.get(
           : "SELECT * FROM users WHERE leader_id=?",
       [...(u.role === "Admin" ? [] : [u.role === "Member" ? u.id : leader])],
     );
-    const bills = await query(
-      u.role === "Admin"
-        ? "SELECT b.*,u.name AS member_name FROM bills b JOIN users u ON u.id=b.member_id"
-        : u.role === "Leader"
-          ? "SELECT b.*,u.name AS member_name FROM bills b JOIN users u ON u.id=b.member_id WHERE b.leader_id=?"
-          : "SELECT b.*,u.name AS member_name FROM bills b JOIN users u ON u.id=b.member_id WHERE b.member_id=?",
-      u.role === "Admin" ? [] : [u.id],
-    );
+    const metadata = req.query.view === "metadata";
+    const bills = metadata
+      ? []
+      : await query(
+          u.role === "Admin"
+            ? "SELECT b.*,u.name AS member_name FROM bills b JOIN users u ON u.id=b.member_id"
+            : u.role === "Leader"
+              ? "SELECT b.*,u.name AS member_name FROM bills b JOIN users u ON u.id=b.member_id WHERE b.leader_id=?"
+              : "SELECT b.*,u.name AS member_name FROM bills b JOIN users u ON u.id=b.member_id WHERE b.member_id=?",
+          u.role === "Admin" ? [] : [u.id],
+        );
     const settings = await query("SELECT * FROM settings WHERE leader_id=?", [
       leader,
     ]);
@@ -393,15 +548,17 @@ app.get(
               (u.role === "Member" ? " AND member_id=?" : ""),
             u.role === "Member" ? [leader, u.id] : [leader],
           );
-    const discountSnapshots = await query(
-      "SELECT s.bill_id,s.rates FROM bill_discount_snapshots s JOIN bills b ON b.id=s.bill_id" +
-        (u.role === "Admin"
-          ? ""
-          : u.role === "Leader"
-            ? " WHERE b.leader_id=?"
-            : " WHERE b.member_id=?"),
-      u.role === "Admin" ? [] : [u.id],
-    );
+    const discountSnapshots = metadata
+      ? []
+      : await query(
+          "SELECT s.bill_id,s.rates FROM bill_discount_snapshots s JOIN bills b ON b.id=s.bill_id" +
+            (u.role === "Admin"
+              ? ""
+              : u.role === "Leader"
+                ? " WHERE b.leader_id=?"
+                : " WHERE b.member_id=?"),
+          u.role === "Admin" ? [] : [u.id],
+        );
     const discountsByBill = new Map(
       discountSnapshots.map((s) => [s.bill_id, s.rates]),
     );
@@ -420,7 +577,7 @@ app.get(
       [u.id],
     );
     const teamBills =
-      u.role === "Admin"
+      metadata || u.role === "Admin"
         ? []
         : await query(
             "SELECT draw_id,items FROM bills WHERE leader_id=? AND status='active'",
@@ -436,6 +593,15 @@ app.get(
                 u.leader_id,
               ])
             )[0];
+    if (metadata) {
+      const [scope, values] = billScope(u);
+      const occupied = await query(
+        "SELECT DISTINCT b.draw_id FROM bills b WHERE " + scope,
+        values,
+      );
+      const occupiedIds = new Set(occupied.map((row) => row.draw_id));
+      for (const draw of draws) draw.hasBills = occupiedIds.has(draw.id);
+    }
     res.json({
       view: "full",
       user: clean(u),
@@ -443,13 +609,13 @@ app.get(
       lotteries,
       draws,
       users: users.map(clean),
-      bills: bills.map((b) => ({
-        ...b,
-        discountRates: discountsByBill.get(b.id) || {},
-        currency: billCurrency(b),
-        items: b.items.map(({ discount, ...item }) => item),
-        win: winnings(b, draws.find((d) => d.id === b.draw_id) || {}),
-      })),
+      bills: bills.map((b) =>
+        serializeBill(
+          b,
+          draws.find((d) => d.id === b.draw_id),
+          discountsByBill.get(b.id),
+        ),
+      ),
       memberDiscounts,
       exchangeRates,
       settings: settings.map((s) => ({ ...s, config: cleanConfig(s.config) })),
@@ -1289,7 +1455,7 @@ app.post(
         c,
       );
       await c.commit();
-      changed(leader.id);
+      billChanged(leader.id, member.id, draw.id);
       res.json({ id: r.insertId });
     } catch (e) {
       await c.rollback();
@@ -1331,7 +1497,7 @@ app.delete(
         throw Error("ปิดรับแล้ว");
       await query("UPDATE bills SET status='cancelled' WHERE id=?", [b.id], c);
       await c.commit();
-      changed(b.leader_id);
+      billChanged(b.leader_id, b.member_id, b.draw_id);
       res.json({ ok: true });
     } catch (e) {
       await c.rollback();

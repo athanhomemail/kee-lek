@@ -1,12 +1,12 @@
+import { useBillData } from "./useBillData.js";
 import { sortLotteries } from "./lotteryOrder.js";
 import LotteryOptions from "./LotteryOptions.jsx";
 import React, { useMemo, useState } from "react";
 import DrawReports from "./DrawReports.jsx";
 import BillCard from "./BillCard.jsx";
-import BillPages from "./BillPages.jsx";
 import ReportPages from "./ReportPages.jsx";
 import { labels } from "./keying.js";
-import { currencyTotals, rankedNumbers, reportCurrencyOf } from "./reports.js";
+import { currencyTotals, rankedNumbers } from "./reports.js";
 import { historicalSales } from "./historicalSales.js";
 const money = (n) =>
   Number(n || 0).toLocaleString("th-TH", { maximumFractionDigits: 2 });
@@ -16,7 +16,8 @@ const drawLabel = (d) =>
   String(d.draw_date).slice(0, 10).split("-").reverse().join("/");
 export default function Statistics({
   state,
-  bills,
+  api,
+  historyFilters,
   filters,
   historyLotteries,
 }) {
@@ -32,29 +33,15 @@ export default function Statistics({
   const [billStatus, setBillStatus] = useState(""),
     [billLottery, setBillLottery] = useState("");
   const currencies = currency === "ALL" ? ["THB", "LAK"] : [currency];
-  const visible = useMemo(
-    () =>
-      bills.filter(
-        (b) => currency === "ALL" || reportCurrencyOf(b) === currency,
-      ),
-    [bills, currency],
+  const [pageRequest, setPageRequest] = useState({ key: "", page: 1 });
+  const draws = state.draws.filter(
+    (d) =>
+      d.hasBills &&
+      (!historyFilters.from ||
+        String(d.draw_date).slice(0, 10) >= historyFilters.from) &&
+      (!historyFilters.to ||
+        String(d.draw_date).slice(0, 10) <= historyFilters.to),
   );
-  const active = useMemo(
-    () => visible.filter((b) => b.status === "active"),
-    [visible],
-  );
-  const draws = useMemo(() => {
-    const ids = new Set(
-      bills.filter((b) => b.status === "active").map((b) => String(b.draw_id)),
-    );
-    return state.draws
-      .filter((d) => ids.has(String(d.id)))
-      .slice()
-      .sort(
-        (a, b) =>
-          String(b.draw_date).localeCompare(String(a.draw_date)) || b.id - a.id,
-      );
-  }, [bills, state.draws]);
   const rankingLotteries = sortLotteries(catalog);
   const rankingLottery =
     rankingLotteries.find((l) => String(l.id) === rankingLotteryId) ||
@@ -64,12 +51,38 @@ export default function Statistics({
   );
   const selectedDraw =
     rankingDraws.find((d) => String(d.id) === drawId) || rankingDraws[0];
+  const effectiveBillLottery = catalog.some((l) => String(l.id) === billLottery)
+    ? billLottery
+    : "";
+  const scope = {
+    ...historyFilters,
+    currency: currency === "ALL" ? "" : currency,
+  };
+  const summary = useBillData(
+    api,
+    state.user,
+    { ...scope, summary: 1, status: "active" },
+    open,
+  );
+  const { bills: active } = summary;
+  const rankingData = useBillData(
+    api,
+    state.user,
+    { ...scope, draw: selectedDraw?.id },
+    Boolean(open && tab === "ranking" && selectedDraw),
+  );
   const ranking = useMemo(
     () =>
-      open && tab === "ranking" && selectedDraw
-        ? rankedNumbers(visible, selectedDraw.id, sortCurrency, direction, type)
+      selectedDraw
+        ? rankedNumbers(
+            rankingData.bills,
+            selectedDraw.id,
+            sortCurrency,
+            direction,
+            type,
+          )
         : [],
-    [open, tab, visible, selectedDraw, sortCurrency, direction, type],
+    [rankingData.bills, selectedDraw?.id, sortCurrency, direction, type],
   );
   const sales = useMemo(
     () =>
@@ -84,27 +97,23 @@ export default function Statistics({
         : { lotteries: [], people: [] },
     [open, tab, active, state.draws, catalog, state.users, state.user.role],
   );
-  const drawMap = useMemo(
-    () => new Map(state.draws.map((d) => [String(d.id), d])),
-    [state.draws],
+  const historyScope = {
+    ...scope,
+    lottery: effectiveBillLottery || scope.lottery,
+    status: billStatus,
+    size: 10,
+  };
+  const historyKey = JSON.stringify(historyScope);
+  const history = useBillData(
+    api,
+    state.user,
+    {
+      ...historyScope,
+      page: pageRequest.key === historyKey ? pageRequest.page : 1,
+    },
+    open && tab === "bills",
   );
-  const effectiveBillLottery = catalog.some((l) => String(l.id) === billLottery)
-    ? billLottery
-    : "";
-  const historyBills = useMemo(
-    () =>
-      visible
-        .filter(
-          (b) =>
-            (!billStatus || b.status === billStatus) &&
-            (!effectiveBillLottery ||
-              String(drawMap.get(String(b.draw_id))?.lottery_id) ===
-                effectiveBillLottery),
-        )
-        .slice()
-        .sort((a, b) => b.id - a.id),
-    [visible, billStatus, effectiveBillLottery, drawMap],
-  );
+  const changePage = (page) => setPageRequest({ key: historyKey, page });
   const amounts = (rows, field = "gross") => {
     const totals = currencyTotals(rows, field);
     return (
@@ -159,7 +168,7 @@ export default function Statistics({
   );
   return (
     <>
-      <DrawReports state={state} bills={state.bills || bills} />
+      <DrawReports state={state} api={api} />
       <details
         className="statistics-history"
         onToggle={(e) => setOpen(e.currentTarget.open)}
@@ -192,15 +201,29 @@ export default function Statistics({
             <div className="cards metrics">
               <div className="panel">
                 <p className="muted">จำนวนโพย</p>
-                <h2>{active.length}</h2>
+                <h2>
+                  {summary.loading ? "…" : summary.error ? "—" : active.length}
+                </h2>
               </div>
               <div className="panel">
                 <p className="muted">ยอดขาย</p>
-                <h2>{amounts(active)}</h2>
+                <h2>
+                  {summary.loading
+                    ? "…"
+                    : summary.error
+                      ? "—"
+                      : amounts(active)}
+                </h2>
               </div>
               <div className="panel">
                 <p className="muted">ยอดถูกรางวัล</p>
-                <h2>{amounts(active, "win")}</h2>
+                <h2>
+                  {summary.loading
+                    ? "…"
+                    : summary.error
+                      ? "—"
+                      : amounts(active, "win")}
+                </h2>
               </div>
             </div>
             <div
@@ -377,7 +400,13 @@ export default function Statistics({
                           </tbody>
                         </table>
                         {!ranking.length && (
-                          <p className="muted">ไม่มีรายการซื้อในงวดที่เลือก</p>
+                          <p className="muted">
+                            {rankingData.loading
+                              ? "กำลังโหลด…"
+                              : rankingData.error
+                                ? "โหลดรายงานไม่สำเร็จ"
+                                : "ไม่มีรายการซื้อในงวดที่เลือก"}
+                          </p>
                         )}
                       </div>
                     )}
@@ -427,16 +456,42 @@ export default function Statistics({
                       </select>
                     </label>
                   </div>
-                  <BillPages
-                    initialPageSize={10}
-                    pageSizes={[10, 25, 50]}
-                    key={`${currency}-${effectiveBillLottery}-${billStatus}`}
-                    bills={historyBills}
-                    renderBill={(b) => (
-                      <BillCard key={b.id} b={b} state={state} />
-                    )}
-                    empty={<p className="muted">ไม่มีโพยตามตัวกรอง</p>}
-                  />
+                  {history.loading || history.error ? (
+                    <p role="status">
+                      {history.error ? "โหลดโพยไม่สำเร็จ" : "กำลังโหลดโพย…"}
+                    </p>
+                  ) : history.total === 0 ? (
+                    <p className="muted">ไม่มีโพยตามตัวกรอง</p>
+                  ) : (
+                    <>
+                      <nav
+                        className="bill-pagination"
+                        aria-label="เปลี่ยนหน้าผลรายโพย"
+                      >
+                        <button
+                          disabled={history.page === 1}
+                          onClick={() => changePage(history.page - 1)}
+                        >
+                          ก่อนหน้า
+                        </button>
+                        <span>
+                          หน้า {history.page} / {Math.ceil(history.total / 10)}{" "}
+                          · {history.total} โพย
+                        </span>
+                        <button
+                          disabled={history.page * 10 >= history.total}
+                          onClick={() => changePage(history.page + 1)}
+                        >
+                          ถัดไป
+                        </button>
+                      </nav>
+                      <section className="bill-list">
+                        {history.bills.map((b) => (
+                          <BillCard key={b.id} b={b} state={state} />
+                        ))}
+                      </section>
+                    </>
+                  )}
                 </>
               )}
             </section>
