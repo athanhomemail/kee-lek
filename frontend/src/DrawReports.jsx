@@ -37,13 +37,10 @@ export default function DrawReports({ state, api }) {
   const [billMember, setBillMember] = useState("");
   const [billCurrency, setBillCurrency] = useState("ALL");
   const [tab, setTab] = useState("numbers");
-  const [currency, setCurrency] = useState("THB");
   const [type, setType] = useState("");
   const [sort, setSort] = useState("payout");
   const [search, setSearch] = useState("");
   const [limits, setLimits] = useState({ THB: "", LAK: "" });
-  const [onlyOverLimit, setOnlyOverLimit] = useState(false);
-  const limit = limits[currency] === "" ? null : Number(limits[currency]);
   const [draft, setDraft] = useState({ top3: "", top2: "", bottom2: "" });
   const [simulation, setSimulation] = useState(null);
   const draws = [...state.draws].sort(
@@ -92,15 +89,6 @@ export default function DrawReports({ state, api }) {
     draw?.id,
     state.exchangeRates || [],
   );
-  const allExposures = numberExposure(bills, draw?.id, currency);
-  const exposures = allExposures
-    .filter(
-      (r) =>
-        (!type || r.type === type) &&
-        r.number.includes(search) &&
-        (!onlyOverLimit || limit === null || r.payout > limit),
-    )
-    .sort((a, b) => b[sort] - a[sort] || a.number.localeCompare(b.number));
   const members = reportGroups(
     bills,
     draw?.id,
@@ -108,7 +96,6 @@ export default function DrawReports({ state, api }) {
     state.users,
     state.exchangeRates || [],
   );
-  const unit = currency === "THB" ? "บาท" : "K กีบ";
   const resultTable = (report) => (
     <div className="report-table-scroll">
       <table className="report-table">
@@ -341,17 +328,7 @@ export default function DrawReports({ state, api }) {
                 กรอกวงเงินที่รับได้ เพื่อดูส่วนต่างและเลขที่ต้องจ่ายเกินวงเงิน
               </small>
             </div>
-            <div className="toolbar report-controls">
-              <label>
-                สกุลเงิน
-                <select
-                  value={currency}
-                  onChange={(e) => setCurrency(e.target.value)}
-                >
-                  <option value="THB">บาท</option>
-                  <option value="LAK">K กีบ</option>
-                </select>
-              </label>
+            <div className="toolbar report-controls risk-filters">
               <label>
                 ประเภทเลข
                 <select value={type} onChange={(e) => setType(e.target.value)}>
@@ -380,118 +357,132 @@ export default function DrawReports({ state, api }) {
                   <option value="count">จำนวนรายการซื้อ</option>
                 </select>
               </label>
-              <label>
-                วงเงินที่รับได้ ({unit})
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  inputMode="decimal"
-                  value={limits[currency]}
-                  placeholder="เช่น 100000"
-                  onChange={(e) => {
-                    const value = e.target.value;
-                    if (
-                      value === "" ||
-                      (Number.isFinite(Number(value)) && Number(value) >= 0)
-                    )
-                      setLimits((current) => ({
-                        ...current,
-                        [currency]: value,
-                      }));
-                  }}
-                />
-              </label>
-              <label>
-                แสดงรายการ
-                <select
-                  value={onlyOverLimit ? "over" : "all"}
-                  onChange={(e) => setOnlyOverLimit(e.target.value === "over")}
-                  disabled={limit === null}
-                >
-                  <option value="all">ทุกเลข</option>
-                  <option value="over">เฉพาะเลขที่เกินวงเงิน</option>
-                </select>
-              </label>
+              {["THB", "LAK"].map((currency) => (
+                <label key={currency}>
+                  วงเงิน ({currency === "THB" ? "บาท" : "K กีบ"})
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    inputMode="decimal"
+                    value={limits[currency]}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      if (
+                        value === "" ||
+                        (Number.isFinite(Number(value)) && Number(value) >= 0)
+                      )
+                        setLimits((current) => ({
+                          ...current,
+                          [currency]: value,
+                        }));
+                    }}
+                  />
+                </label>
+              ))}
             </div>
             <p className="muted">
               เลขโต๊ดที่สลับหลักกันรวมเป็นชุดเดียว เพราะถูกพร้อมกัน
             </p>
-            <div className="report-table-scroll">
-              <table className="report-table risk-table">
-                <thead>
-                  <tr>
-                    <th>อันดับ</th>
-                    <th>เลขที่ซื้อ</th>
-                    <th>ประเภทเลข</th>
-                    <th className="risk-payout-cell">
-                      ต้องจ่ายหากถูก ({unit})
-                    </th>
-                    <th>วงเงิน − ต้องจ่ายหากถูก ({unit})</th>
-                    <th>ยอดซื้อเลขนี้ ({unit})</th>
-                    <th>รายการซื้อ</th>
-                    <th>จ่ายเกินยอดซื้อทั้งงวด ({unit})</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {exposures.map((r, index) => (
-                    <tr
-                      key={r.key}
-                      className={
-                        (
-                          limit === null
-                            ? r.payout > purchased[currency]
-                            : r.payout > limit
-                        )
-                          ? "risk-row-danger"
-                          : ""
-                      }
-                    >
-                      <td>{index + 1}</td>
-                      <td>
-                        <strong className="risk-number">{r.number}</strong>
-                      </td>
-                      <td>{labels[r.type]}</td>
-                      <td className="risk-payout-cell">{money(r.payout)}</td>
-                      <td
-                        className={
-                          limit !== null && r.payout > limit
-                            ? "report-loss"
-                            : ""
-                        }
+            <div className="risk-tables">
+              {["THB", "LAK"].map((currency) => {
+                const unit = currency === "THB" ? "บาท" : "K กีบ";
+                const limit =
+                  limits[currency] === "" ? null : Number(limits[currency]);
+                const all = numberExposure(bills, draw.id, currency);
+                const rows = all
+                  .filter(
+                    (r) =>
+                      (!type || r.type === type) && r.number.includes(search),
+                  )
+                  .sort(
+                    (a, b) =>
+                      b[sort] - a[sort] || a.number.localeCompare(b.number),
+                  );
+                return (
+                  <section key={currency} className="risk-currency">
+                    <h3>{currency === "THB" ? "เงินบาท" : "เงินกีบ (K)"}</h3>
+                    <div className="report-table-scroll">
+                      <table
+                        className="report-table risk-table"
+                        aria-label={`ตารางความเสี่ยง (${unit})`}
                       >
-                        {limit === null
-                          ? "—"
-                          : money(Math.round((limit - r.payout) * 100) / 100)}
-                      </td>
-                      <td>{money(r.amount)}</td>
-                      <td>{r.count}</td>
-                      <td
-                        className={
-                          r.payout > purchased[currency] ? "report-loss" : ""
-                        }
-                      >
-                        {money(Math.max(0, r.payout - purchased[currency]))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                        <thead>
+                          <tr>
+                            <th>อันดับ</th>
+                            <th>เลข</th>
+                            <th>ประเภท</th>
+                            <th>ต้องจ่ายหากถูก</th>
+                            <th>ยอดซื้อเลขนี้</th>
+                            <th>จ่ายเกินยอดซื้อทั้งงวด</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {rows.map((r, index) => (
+                            <tr
+                              key={r.key}
+                              className={
+                                r.payout > (limit ?? purchased[currency])
+                                  ? "risk-row-danger"
+                                  : ""
+                              }
+                            >
+                              <td>{index + 1}</td>
+                              <td>
+                                <strong className="risk-number">
+                                  {r.number}
+                                </strong>
+                              </td>
+                              <td>{labels[r.type]}</td>
+                              <td className="risk-payout-cell">
+                                {money(r.payout)}
+                                <small
+                                  className={
+                                    limit !== null && r.payout > limit
+                                      ? "report-loss"
+                                      : ""
+                                  }
+                                >
+                                  ส่วนต่าง{" "}
+                                  {limit === null
+                                    ? "—"
+                                    : money(
+                                        Math.round((limit - r.payout) * 100) /
+                                          100,
+                                      )}
+                                </small>
+                              </td>
+                              <td>
+                                {money(r.amount)}
+                                <small>{r.count} รายการ</small>
+                              </td>
+                              <td
+                                className={
+                                  r.payout > purchased[currency]
+                                    ? "report-loss"
+                                    : ""
+                                }
+                              >
+                                {money(
+                                  Math.max(0, r.payout - purchased[currency]),
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    {!rows.length && (
+                      <p className="risk-empty">
+                        {all.length
+                          ? "ไม่พบเลขตามตัวกรอง"
+                          : `ยังไม่มีรายการซื้อ (${unit})`}
+                      </p>
+                    )}
+                  </section>
+                );
+              })}
             </div>
-            {!exposures.length && (
-              <div className="risk-empty">
-                <strong>
-                  {allExposures.length
-                    ? "ไม่พบเลขตามตัวกรอง"
-                    : `ยังไม่มีรายการซื้อ${unit}ในงวดนี้`}
-                </strong>
-                <p>
-                  {allExposures.length
-                    ? "ลองเปลี่ยนประเภทเลข คำค้นหา หรือวงเงิน"
-                    : "เมื่อสมาชิกส่งโพย เลขและภาระจ่ายจะปรากฏที่นี่"}
-                </p>
-              </div>
-            )}
             <p className="muted">
               ส่วนต่างวงเงิน = วงเงินที่รับได้ − ต้องจ่ายหากถูก ·
               ค่าติดลบคือจำนวนที่เกินวงเงิน เช่น วงเงิน 100,000 ต้องจ่าย 120,000

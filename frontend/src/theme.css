@@ -3512,3 +3512,42 @@ footer {
 .auto-draw-exceptions .report-table { min-width:640px; }
 .auto-draw-exceptions .report-table th, .auto-draw-exceptions .report-table td { padding:8px 12px; border:1px solid var(--palette-border-eee8f0,#eee8f0); text-align:left; }
 .auto-draw-exceptions .report-table button { padding:5px 8px; font-size:12px; }
+
+.risk-report .risk-filters {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8px;
+  padding: 10px;
+}
+.risk-filters label,
+.risk-filters input,
+.risk-filters select { min-width: 0; width: 100%; }
+.risk-tables {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  align-items: start;
+}
+.risk-currency { min-width: 0; }
+.risk-currency h3 { margin: 0 0 8px; }
+.risk-report .risk-currency .risk-table { min-width: 0; }
+.risk-report .risk-currency .risk-table :is(th, td) {
+  padding: 7px 5px;
+  font-size: 12px;
+  line-height: 1.25;
+}
+.risk-report .risk-currency .risk-table .risk-number {
+  font-size: 16px;
+  letter-spacing: 0;
+}
+.risk-report .risk-currency .risk-table td.risk-payout-cell { font-size: 14px; }
+.risk-currency .risk-table small {
+  display: block;
+  font-size: 10px;
+  font-weight: 500;
+}
+.risk-currency .risk-empty { padding: 12px; margin: 0; }
+@media (max-width: 740px) {
+  .risk-tables { grid-template-columns: minmax(0, 1fr); }
+  .risk-report .risk-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
