@@ -212,3 +212,14 @@ test("spacebar skips all two-digit doubles while preserving mixed entries and th
   assert.equal(appendReversedNumbers("22 22 =50", 2), "22 22 =50");
   assert.equal(appendReversedNumbers("121 111", 3), "121 111 121 111");
 });
+
+
+test("six reverse expands pasted batches while ignoring attached prices", async () => {
+  const { splitNumberInput } = await import("./keying.js");
+  const parsed = splitNumberInput("123=100\n112 50*50\n000", 3);
+  const batch = [...parsed.completed, parsed.pending].filter(Boolean).join(" ");
+  assert.deepEqual(numbers(batch, "6 กลับ"), [
+    "123", "132", "213", "231", "312", "321",
+    "112", "121", "211", "000",
+  ]);
+});

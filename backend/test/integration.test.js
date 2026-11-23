@@ -487,6 +487,18 @@ test(
         null,
         "unpublished results are private",
       );
+      const beforeClear = (await api("/bill-data?draw=" + draw, a)).data.bills;
+      assert.equal((await api("/draws/" + draw + "/result", l, undefined, "DELETE")).status, 403);
+      assert.equal((await api("/draws/" + draw + "/result", members[0].token, undefined, "DELETE")).status, 403);
+      assert.equal((await api("/draws/" + draw + "/result", a, undefined, "DELETE")).status, 200);
+      const cleared = (await api("/state", a)).data.draws.find((d) => d.id === draw);
+      assert.equal(cleared.top3, null);
+      assert.equal(cleared.top2, null);
+      assert.equal(cleared.bottom2, null);
+      const afterClear = (await api("/bill-data?draw=" + draw, a)).data.bills;
+      assert.deepEqual(afterClear.map(({win, ...b}) => b), beforeClear.map(({win, ...b}) => b));
+      assert.ok(afterClear.every((b) => b.win === 0));
+      assert.equal((await api("/draws/" + draw + "/result", a, undefined, "DELETE")).status, 400);
       await api(
         "/users/" + leader,
         a,

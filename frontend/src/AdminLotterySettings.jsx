@@ -188,7 +188,18 @@ export function DrawEditor({ lotteries, lotteryId, draw, onSave }) {
   );
 }
 
-export function ResultEditor({ draw, onSave }) {
+export function latestResult(draw, draws) {
+  return !draws.some(
+    (other) =>
+      other.lottery_id === draw.lottery_id &&
+      (other.top3 || other.top2 || other.bottom2) &&
+      (String(other.draw_date) > String(draw.draw_date) ||
+        (String(other.draw_date) === String(draw.draw_date) &&
+          other.id > draw.id)),
+  );
+}
+
+export function ResultEditor({ draw, onSave, onClear, canClear = false }) {
   return (
     <form
       className="admin-edit-form"
@@ -221,6 +232,11 @@ export function ResultEditor({ draw, onSave }) {
         ))}
       </div>
       <button className="primary">บันทึกผลรางวัล</button>
+      {canClear && onClear && (draw.top3 || draw.top2 || draw.bottom2) && (
+        <button type="button" className="admin-delete" onClick={onClear}>
+          ล้างผลรางวัล
+        </button>
+      )}
     </form>
   );
 }
@@ -488,6 +504,24 @@ export default function AdminLotterySettings({
                                 content: (
                                   <ResultEditor
                                     draw={d}
+                                    canClear={latestResult(d, state.draws)}
+                                    onClear={() =>
+                                      modal({
+                                        title: `ยืนยันล้างผล ${d.name} งวด ${date(d.draw_date)}?`,
+                                        content: (
+                                          <p>
+                                            ล้างผลรางวัลทั้ง 3 ช่องของงวดนี้
+                                            รายงานจะกลับไปรอผล
+                                            และคำนวณรางวัลใหม่เมื่อบันทึกผลอีกครั้ง
+                                          </p>
+                                        ),
+                                        confirm: () =>
+                                          save(
+                                            `/draws/${d.id}/result`,
+                                            "delete",
+                                          ),
+                                      })
+                                    }
                                     onSave={(v) =>
                                       save(`/draws/${d.id}`, "patch", v)
                                     }

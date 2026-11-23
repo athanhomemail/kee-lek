@@ -975,6 +975,47 @@ app.post(
     res.json({ ok: true });
   }),
 );
+app.delete(
+  "/api/draws/:id/result",
+  role(["Admin"]),
+  route(async (req, res) => {
+    const [reference] = await query("SELECT lottery_id FROM draws WHERE id=?", [
+      req.params.id,
+    ]);
+    if (!reference) throw Error("ไม่พบงวดหวย");
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      await query(
+        "SELECT id FROM lotteries WHERE id=? FOR UPDATE",
+        [reference.lottery_id],
+        connection,
+      );
+      const [latest] = await query(
+        "SELECT id FROM draws WHERE lottery_id=? AND (top3 IS NOT NULL OR top2 IS NOT NULL OR bottom2 IS NOT NULL) ORDER BY draw_date DESC,id DESC LIMIT 1 FOR UPDATE",
+        [reference.lottery_id],
+        connection,
+      );
+      if (!latest || String(latest.id) !== req.params.id)
+        throw Error(
+          "ล้างได้เฉพาะงวดล่าสุดที่มีผลของหวยประเภทนี้ กรุณาโหลดข้อมูลใหม่",
+        );
+      await query(
+        "UPDATE draws SET top3=NULL,top2=NULL,bottom2=NULL WHERE id=?",
+        [latest.id],
+        connection,
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
+    io.emit("refresh");
+    res.json({ ok: true });
+  }),
+);
 app.patch(
   "/api/draws/:id",
   role(["Admin"]),
@@ -986,12 +1027,32 @@ app.patch(
       !/^\d{2}$/.test(b.bottom2)
     )
       throw Error("ผลต้องครบ 3 ตัวบน 2 ตัวบน 2 ตัวล่าง");
-    await query("UPDATE draws SET top3=?,top2=?,bottom2=? WHERE id=?", [
-      b.top3,
-      b.top2,
-      b.bottom2,
-      req.params.id,
-    ]);
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+      const [draw] = await query(
+        "SELECT lottery_id FROM draws WHERE id=?",
+        [req.params.id],
+        connection,
+      );
+      if (!draw) throw Error("ไม่พบงวดหวย");
+      await query(
+        "SELECT id FROM lotteries WHERE id=? FOR UPDATE",
+        [draw.lottery_id],
+        connection,
+      );
+      await query(
+        "UPDATE draws SET top3=?,top2=?,bottom2=? WHERE id=?",
+        [b.top3, b.top2, b.bottom2, req.params.id],
+        connection,
+      );
+      await connection.commit();
+    } catch (error) {
+      await connection.rollback();
+      throw error;
+    } finally {
+      connection.release();
+    }
     io.emit("refresh");
     void checkAutoDrawsSafely();
     res.json({ ok: true });

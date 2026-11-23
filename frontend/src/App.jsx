@@ -9,7 +9,10 @@ import Bill from "./BillCard.jsx";
 import BillPages from "./BillPages.jsx";
 import AccountProfile from "./AccountProfile.jsx";
 import PasswordInput from "./PasswordInput.jsx";
-import AdminLotterySettings, { ResultEditor } from "./AdminLotterySettings.jsx";
+import AdminLotterySettings, {
+  ResultEditor,
+  latestResult,
+} from "./AdminLotterySettings.jsx";
 import UserPasswordAccess from "./UserPasswordAccess.jsx";
 import { ExchangeSettings, RateTable } from "./LeaderRates.jsx";
 import React, { useState, useEffect, useMemo, useRef } from "react";
@@ -908,6 +911,24 @@ export default function App() {
                         content: (
                           <ResultEditor
                             draw={d}
+                            canClear={latestResult(d, state.draws)}
+                            onClear={() =>
+                              setModal({
+                                title: `ยืนยันล้างผล ${d.name} งวด ${date(d.draw_date)}?`,
+                                content: (
+                                  <p>
+                                    ล้างผลรางวัลทั้ง 3 ช่องของงวดนี้
+                                    รายงานจะกลับไปรอผล
+                                    และคำนวณรางวัลใหม่เมื่อบันทึกผลอีกครั้ง
+                                  </p>
+                                ),
+                                confirm: () =>
+                                  act(async () => {
+                                    await api.delete(`/draws/${d.id}/result`);
+                                    setModal(null);
+                                  }),
+                              })
+                            }
                             onSave={(values) =>
                               act(async () => {
                                 await api.patch(`/draws/${d.id}`, values);
@@ -1330,44 +1351,43 @@ export default function App() {
                                 setPasted(false);
                               }}
                               onPaste={(e) => {
-                                if (mode === "6 กลับ") {
-                                  e.preventDefault();
-                                  message("โหมดนี้ไม่รองรับการวางข้อความ");
-                                } else {
-                                  e.preventDefault();
-                                  const pastedText =
-                                    e.clipboardData.getData("text");
-                                  const field = e.target;
-                                  const pastedTokens = splitNumberInput(
+                                e.preventDefault();
+                                const pastedText =
+                                  e.clipboardData.getData("text");
+                                const field = e.target;
+                                const pastedTokens = splitNumberInput(
+                                  inputTokens.pending.slice(
+                                    0,
+                                    field.selectionStart,
+                                  ) +
+                                    pastedText +
                                     inputTokens.pending.slice(
-                                      0,
-                                      field.selectionStart,
-                                    ) +
-                                      pastedText +
-                                      inputTokens.pending.slice(
-                                        field.selectionEnd,
-                                      ),
-                                    inputSize,
-                                  );
-                                  setText(
-                                    [
-                                      ...inputTokens.completed,
-                                      ...pastedTokens.completed,
-                                      pastedTokens.pending,
-                                    ]
-                                      .filter(Boolean)
-                                      .join(" "),
-                                  );
-                                  setPasted(true);
-                                  setReverse(false);
-                                }
+                                      field.selectionEnd,
+                                    ),
+                                  inputSize,
+                                );
+                                setText(
+                                  [
+                                    ...inputTokens.completed,
+                                    ...pastedTokens.completed,
+                                    pastedTokens.pending,
+                                  ]
+                                    .filter(Boolean)
+                                    .join(" "),
+                                );
+                                setPasted(true);
+                                setReverse(false);
                               }}
                               placeholder={
                                 inputTokens.completed.length
                                   ? ""
-                                  : ["2 ตัว", "3 ตัว", "รูด", "วิ่ง"].includes(
-                                        mode,
-                                      )
+                                  : [
+                                        "2 ตัว",
+                                        "3 ตัว",
+                                        "6 กลับ",
+                                        "รูด",
+                                        "วิ่ง",
+                                      ].includes(mode)
                                     ? "พิมพ์เลข หรือวางข้อความจากลูกค้า"
                                     : "กรอกตัวเลข"
                               }
